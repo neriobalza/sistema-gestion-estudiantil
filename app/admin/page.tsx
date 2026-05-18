@@ -13,33 +13,7 @@ import {
   UserPlus,
   Users,
 } from "lucide-react";
-
-const stats = [
-  {
-    label: "Estudiantes",
-    value: "8,500",
-    helper: "+8.2% vs. mes anterior",
-    icon: Users,
-  },
-  {
-    label: "Docentes",
-    value: "320",
-    helper: "+4.5% vs. mes anterior",
-    icon: GraduationCap,
-  },
-  {
-    label: "Facultades",
-    value: "12",
-    helper: "Sin cambios",
-    icon: Building2,
-  },
-  {
-    label: "Solicitudes pendientes",
-    value: "24",
-    helper: "+20% vs. semana anterior",
-    icon: ClipboardList,
-  },
-];
+import { prisma } from "@/src/lib/prisma";
 
 const quickActions = [
   {
@@ -51,13 +25,13 @@ const quickActions = [
   {
     title: "Registrar facultad",
     description: "Agregar nueva facultad",
-    href: "/admin/faculties/new",
+    href: "/admin/faculties?create=faculty",
     icon: Building2,
   },
   {
     title: "Crear escuela",
     description: "Agregar nueva escuela",
-    href: "/admin/schools/new",
+    href: "/admin/faculties?create=school",
     icon: GraduationCap,
   },
   {
@@ -99,7 +73,13 @@ const pendingItems = [
   },
 ];
 
-const recentActivity = [];
+type RecentActivity = {
+  title: string;
+  description: string;
+  time: string;
+};
+
+const recentActivity: RecentActivity[] = [];
 
 const chartData = [
   {
@@ -134,7 +114,40 @@ const chartData = [
   },
 ];
 
-export default function AdminDashboardPage() {
+export default async function AdminDashboardPage() {
+  const [studentsCount, professorsCount, facultiesCount] = await Promise.all([
+    prisma.studentProfile.count(),
+    prisma.professorProfile.count(),
+    prisma.faculty.count(),
+  ]);
+
+  const stats = [
+    {
+      label: "Estudiantes",
+      value: formatCount(studentsCount),
+      helper: "Registrados en el sistema",
+      icon: Users,
+    },
+    {
+      label: "Docentes",
+      value: formatCount(professorsCount),
+      helper: "Registrados en el sistema",
+      icon: GraduationCap,
+    },
+    {
+      label: "Facultades",
+      value: formatCount(facultiesCount),
+      helper: "Estructura académica activa",
+      icon: Building2,
+    },
+    {
+      label: "Solicitudes pendientes",
+      value: "0",
+      helper: "Sin módulo de solicitudes activo",
+      icon: ClipboardList,
+    },
+  ];
+
   return (
     <div className="space-y-6">
       <section className="relative overflow-hidden rounded-2xl bg-[#031b46] p-8 text-white shadow-sm">
@@ -362,4 +375,8 @@ export default function AdminDashboardPage() {
       </footer>
     </div>
   );
+}
+
+function formatCount(value: number) {
+  return new Intl.NumberFormat("es-VE").format(value);
 }

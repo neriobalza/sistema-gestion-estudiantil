@@ -53,14 +53,14 @@ export function UserDropdown({ user }: UserDropdownProps) {
     });
   }
 
-  let dashborad_url = "student";
+  let dashborad_url = "/student";
 
   switch (user.role) {
     case Role.ADMIN:
-      dashborad_url = "admin";
+      dashborad_url = "/admin";
       break;
     case Role.PROFESSOR:
-      dashborad_url = "professor";
+      dashborad_url = "/professor";
       break;
   }
 

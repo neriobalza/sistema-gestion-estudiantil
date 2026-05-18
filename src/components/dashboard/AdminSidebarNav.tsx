@@ -4,8 +4,8 @@ import {
   BookOpen,
   Building2,
   CalendarDays,
+  ClipboardList,
   FileText,
-  GraduationCap,
   LayoutDashboard,
   Settings,
   Users,
@@ -24,14 +24,14 @@ const sidebarItems = [
     icon: Users,
   },
   {
+    label: "Profesores",
+    href: "/admin/professors",
+    icon: Users,
+  },
+  {
     label: "Facultades",
     href: "/admin/faculties",
     icon: Building2,
-  },
-  {
-    label: "Escuelas",
-    href: "/admin/schools",
-    icon: GraduationCap,
   },
   {
     label: "Pensums",
@@ -49,9 +49,9 @@ const sidebarItems = [
     icon: CalendarDays,
   },
   {
-    label: "Reportes",
-    href: "/admin/reports",
-    icon: FileText,
+    label: "Reclamos",
+    href: "/admin/claims",
+    icon: ClipboardList,
   },
   {
     label: "Configuración",

@@ -5,7 +5,7 @@
 import { useActionState, useEffect, useRef } from "react";
 import { useFormStatus } from "react-dom";
 import { Building2, Loader2, Plus } from "lucide-react";
-import { createFacultyAction, type CreateFacultyState } from "../actions";
+import { createFacultyAction, type CreateFacultyState } from "./actions";
 
 const initialState: CreateFacultyState = {
   status: "idle",
