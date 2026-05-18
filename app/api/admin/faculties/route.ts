@@ -6,7 +6,6 @@ import { facultyCreateSchema } from "../validation";
 export async function GET() {
   const authError = await requireApiAdmin();
   if (authError) return authError;
-  console.log("pidiendo");
 
   try {
     const faculties = await prisma.faculty.findMany({

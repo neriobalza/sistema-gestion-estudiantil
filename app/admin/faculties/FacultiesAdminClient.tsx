@@ -1,149 +1,95 @@
 "use client";
 
 import {
-  ArrowUpRight,
+  AlertTriangle,
   Building2,
-  DoorOpen,
-  GraduationCap,
-  Layers3,
+  CheckCircle2,
+  Edit3,
   Loader2,
   Plus,
   RefreshCcw,
   Search,
+  Trash2,
   X,
 } from "lucide-react";
-import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
-
-type CountBag = Record<string, number>;
 
 type Faculty = {
   id: string;
   code: string;
   name: string;
   description: string | null;
-  _count?: CountBag;
+  _count?: {
+    schools?: number;
+    departments?: number;
+    classrooms?: number;
+  };
 };
 
-type School = {
-  id: string;
-  facultyId: string;
-  code: string;
-  name: string;
-  description: string | null;
-  faculty?: Faculty;
-  _count?: CountBag;
-};
-
-type Department = {
-  id: string;
-  facultyId: string;
-  code: string;
-  name: string;
-  description: string | null;
-  faculty?: Faculty;
-  _count?: CountBag;
-};
-
-type Classroom = {
-  id: string;
-  facultyId: string;
-  code: string;
-  building: string | null;
-  room: string | null;
-  capacity: number | null;
-  faculty?: Faculty;
-  _count?: CountBag;
-};
-
-type ApiList<T> = {
-  data: T[];
+type ApiListResponse = {
+  data: Faculty[];
   message?: string;
 };
 
-type ModalKind = "faculty" | "school" | "department" | "classroom";
-
-const modalLabels: Record<ModalKind, string> = {
-  faculty: "Nueva facultad",
-  school: "Nueva escuela",
-  department: "Nuevo departamento",
-  classroom: "Nuevo salon",
+type ApiFacultyResponse = {
+  data?: Faculty;
+  message?: string;
+  errors?: Record<string, string[] | undefined>;
 };
 
-const endpoints: Record<ModalKind, string> = {
-  faculty: "/api/admin/faculties",
-  school: "/api/admin/schools",
-  department: "/api/admin/departments",
-  classroom: "/api/admin/classrooms",
+type FormMode = "create" | "edit";
+
+type FormState = {
+  mode: FormMode;
+  faculty: Faculty | null;
+};
+
+type DeleteState = {
+  faculty: Faculty;
+  isDeleting: boolean;
+};
+
+const emptyFormState: FormState = {
+  mode: "create",
+  faculty: null,
 };
 
 export function FacultiesAdminClient() {
-  const searchParams = useSearchParams();
   const [faculties, setFaculties] = useState<Faculty[]>([]);
-  const [schools, setSchools] = useState<School[]>([]);
-  const [departments, setDepartments] = useState<Department[]>([]);
-  const [classrooms, setClassrooms] = useState<Classroom[]>([]);
   const [query, setQuery] = useState("");
-  const [modalKind, setModalKind] = useState<ModalKind | null>(null);
+  const [formState, setFormState] = useState<FormState>(emptyFormState);
+  const [deleteState, setDeleteState] = useState<DeleteState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
 
-  async function loadData() {
+  async function loadFaculties() {
     setIsLoading(true);
-    setError("");
+    setErrorMessage("");
 
     try {
-      const resources = [
-        ["facultades", "/api/admin/faculties"],
-        ["escuelas", "/api/admin/schools"],
-        ["departamentos", "/api/admin/departments"],
-        ["salones", "/api/admin/classrooms"],
-      ] as const;
+      const response = await fetch("/api/admin/faculties", {
+        cache: "no-store",
+        credentials: "include",
+      });
 
-      const responses = await Promise.all(
-        resources.map(async ([label, url]) => {
-          const response = await fetch(url, {
-            cache: "no-store",
-            credentials: "include",
-          });
-          console.log(response);
+      const result = (await response.json().catch(() => null)) as
+        | ApiListResponse
+        | null;
 
-          if (!response.ok) {
-            const body = (await response.json().catch(() => null)) as {
-              message?: string;
-            } | null;
+      if (!response.ok) {
+        throw new Error(
+          result?.message ?? `No se pudieron cargar las facultades.`,
+        );
+      }
 
-            throw new Error(
-              `No se pudo cargar ${label}: ${
-                body?.message ?? `HTTP ${response.status}`
-              }`,
-            );
-          }
-
-          return response.json();
-        }),
-      );
-
-      const [facultiesJson, schoolsJson, departmentsJson, classroomsJson] =
-        responses as [
-          ApiList<Faculty>,
-          ApiList<School>,
-          ApiList<Department>,
-          ApiList<Classroom>,
-        ];
-
-      setFaculties(facultiesJson.data);
-      setSchools(schoolsJson.data);
-      setDepartments(departmentsJson.data);
-      setClassrooms(classroomsJson.data);
-    } catch (loadError) {
-      setError(
-        loadError instanceof Error
-          ? loadError.message
-          : "No se pudo cargar la informacion academica.",
+      setFaculties(result?.data ?? []);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "No se pudieron cargar las facultades.",
       );
     } finally {
       setIsLoading(false);
@@ -152,19 +98,9 @@ export function FacultiesAdminClient() {
 
   useEffect(() => {
     queueMicrotask(() => {
-      void loadData();
+      void loadFaculties();
     });
   }, []);
-
-  useEffect(() => {
-    const createParam = searchParams.get("create");
-
-    if (isModalKind(createParam)) {
-      queueMicrotask(() => {
-        setModalKind(createParam);
-      });
-    }
-  }, [searchParams]);
 
   const filteredFaculties = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -179,45 +115,113 @@ export function FacultiesAdminClient() {
     );
   }, [faculties, query]);
 
-  async function handleCreate(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!modalKind) return;
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    const payload = {
+      code: String(formData.get("code") ?? ""),
+      name: String(formData.get("name") ?? ""),
+      description: String(formData.get("description") ?? ""),
+    };
 
-    const formData = new FormData(event.currentTarget);
-    const payload = getPayload(modalKind, formData);
+    const editingFaculty =
+      formState.mode === "edit" ? formState.faculty : null;
+    const isEdit = editingFaculty !== null;
+    const url = isEdit
+      ? `/api/admin/faculties/${editingFaculty.id}`
+      : "/api/admin/faculties";
 
     setIsSaving(true);
-    setError("");
-    setMessage("");
+    setSuccessMessage("");
+    setErrorMessage("");
 
     try {
-      const response = await fetch(endpoints[modalKind], {
-        method: "POST",
+      const response = await fetch(url, {
+        method: isEdit ? "PATCH" : "POST",
         headers: {
           "Content-Type": "application/json",
         },
+        credentials: "include",
         body: JSON.stringify(payload),
       });
 
-      const result = (await response.json()) as { message?: string };
+      const result = (await response.json().catch(() => null)) as
+        | ApiFacultyResponse
+        | null;
 
       if (!response.ok) {
-        throw new Error(result.message ?? "No se pudo crear el registro.");
+        throw new Error(formatApiError(result));
       }
 
-      setMessage(result.message ?? "Registro creado correctamente.");
-      setModalKind(null);
-      await loadData();
-    } catch (createError) {
-      setError(
-        createError instanceof Error
-          ? createError.message
-          : "No se pudo crear el registro.",
+      form.reset();
+      setFormState(emptyFormState);
+      setSuccessMessage(
+        result?.message ??
+          (isEdit
+            ? "Facultad actualizada correctamente."
+            : "Facultad creada correctamente."),
+      );
+      await loadFaculties();
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "No se pudo guardar la facultad.",
       );
     } finally {
       setIsSaving(false);
     }
+  }
+
+  async function handleDelete() {
+    if (!deleteState) return;
+
+    const faculty = deleteState.faculty;
+
+    setDeleteState({ faculty, isDeleting: true });
+    setSuccessMessage("");
+    setErrorMessage("");
+
+    try {
+      const response = await fetch(`/api/admin/faculties/${faculty.id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+
+      const result = (await response.json().catch(() => null)) as
+        | ApiFacultyResponse
+        | null;
+
+      if (!response.ok) {
+        throw new Error(formatApiError(result));
+      }
+
+      setDeleteState(null);
+      setSuccessMessage(result?.message ?? "Facultad eliminada correctamente.");
+      await loadFaculties();
+    } catch (error) {
+      setDeleteState({ faculty, isDeleting: false });
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "No se pudo eliminar la facultad.",
+      );
+    }
+  }
+
+  function startEdit(faculty: Faculty) {
+    setFormState({
+      mode: "edit",
+      faculty,
+    });
+    setSuccessMessage("");
+    setErrorMessage("");
+  }
+
+  function cancelEdit() {
+    setFormState(emptyFormState);
   }
 
   return (
@@ -227,482 +231,385 @@ export function FacultiesAdminClient() {
           <h1 className="text-2xl font-bold text-[#031b46] md:text-3xl">
             Facultades
           </h1>
-          <p className="mt-2 max-w-2xl text-sm text-slate-500">
-            Gestiona la estructura física y académica base: facultades,
-            escuelas, departamentos y salones.
+          <p className="mt-2 max-w-3xl text-sm text-slate-500">
+            Administra las facultades registradas en la universidad. Desde aquí
+            puedes crear, editar y retirar facultades sin acceder directamente a
+            la base de datos desde la interfaz.
           </p>
         </div>
 
         <button
           type="button"
-          onClick={() => void loadData()}
-          className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-[#031b46] shadow-sm transition hover:border-amber-300 hover:bg-amber-50"
+          onClick={() => void loadFaculties()}
+          disabled={isLoading}
+          className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-[#031b46] shadow-sm transition hover:border-amber-300 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-70"
         >
-          <RefreshCcw className="h-4 w-4" />
+          {isLoading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <RefreshCcw className="h-4 w-4" />
+          )}
           Actualizar
         </button>
       </section>
 
-      {message && (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
-          {message}
-        </div>
+      {successMessage && (
+        <Alert tone="success" message={successMessage} />
       )}
 
-      {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
-          {error}
-        </div>
-      )}
+      {errorMessage && <Alert tone="error" message={errorMessage} />}
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          label="Facultades"
-          value={faculties.length}
-          icon={Building2}
-          onCreate={() => setModalKind("faculty")}
-        />
-        <StatCard
-          label="Escuelas"
-          value={schools.length}
-          icon={GraduationCap}
-          onCreate={() => setModalKind("school")}
-          disabled={!faculties.length}
-        />
-        <StatCard
-          label="Departamentos"
-          value={departments.length}
-          icon={Layers3}
-          onCreate={() => setModalKind("department")}
-          disabled={!faculties.length}
-        />
-        <StatCard
-          label="Salones"
-          value={classrooms.length}
-          icon={DoorOpen}
-          onCreate={() => setModalKind("classroom")}
-          disabled={!faculties.length}
-        />
-      </section>
-
-      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-col gap-4 border-b border-slate-100 p-6 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h2 className="text-lg font-bold text-[#031b46]">
-              Facultades registradas
-            </h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Vista general con conteos de escuelas, departamentos y salones.
-            </p>
-          </div>
-
-          <div className="flex w-full items-center rounded-xl border border-slate-200 bg-white px-3 py-2 md:w-80">
-            <Search className="mr-2 h-4 w-4 text-slate-400" />
-            <input
-              type="text"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Buscar facultad..."
-              className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
-            />
-          </div>
-        </div>
-
-        {isLoading ? (
-          <LoadingState />
-        ) : filteredFaculties.length === 0 ? (
-          <EmptyState onCreate={() => setModalKind("faculty")} />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-195 text-left">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                <tr>
-                  <th className="px-6 py-4 font-bold">Facultad</th>
-                  <th className="px-6 py-4 font-bold">Codigo</th>
-                  <th className="px-6 py-4 font-bold">Escuelas</th>
-                  <th className="px-6 py-4 font-bold">Departamentos</th>
-                  <th className="px-6 py-4 font-bold">Salones</th>
-                  <th className="px-6 py-4 text-right font-bold">Detalle</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredFaculties.map((faculty) => (
-                  <tr key={faculty.id} className="transition hover:bg-slate-50">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#031b46]/5 text-[#031b46]">
-                          <Building2 className="h-5 w-5" />
-                        </div>
-                        <div>
-                          <p className="font-bold text-slate-800">
-                            {faculty.name}
-                          </p>
-                          <p className="mt-1 line-clamp-1 max-w-xl text-xs text-slate-500">
-                            {faculty.description ??
-                              "Sin descripcion registrada"}
-                          </p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-700">
-                        {faculty.code}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-sm font-semibold text-slate-700">
-                      {faculty._count?.schools ??
-                        countByFaculty(schools, faculty.id)}
-                    </td>
-                    <td className="px-6 py-4 text-sm font-semibold text-slate-700">
-                      {faculty._count?.departments ??
-                        countByFaculty(departments, faculty.id)}
-                    </td>
-                    <td className="px-6 py-4 text-sm font-semibold text-slate-700">
-                      {faculty._count?.classrooms ??
-                        countByFaculty(classrooms, faculty.id)}
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <Link
-                        href={`/admin/faculties/${faculty.id}`}
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:border-amber-300 hover:bg-amber-50 hover:text-amber-600"
-                        aria-label={`Ver detalle de ${faculty.name}`}
-                      >
-                        <ArrowUpRight className="h-4 w-4" />
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      <section className="grid gap-6 xl:grid-cols-3">
-        <RelatedList
-          title="Escuelas"
-          emptyLabel="No hay escuelas registradas"
-          items={schools}
-          icon={GraduationCap}
-          getMeta={(item) => item.faculty?.name ?? "Sin facultad"}
-          onCreate={() => setModalKind("school")}
-          disabled={!faculties.length}
-        />
-        <RelatedList
-          title="Departamentos"
-          emptyLabel="No hay departamentos registrados"
-          items={departments}
-          icon={Layers3}
-          getMeta={(item) => item.faculty?.name ?? "Sin facultad"}
-          onCreate={() => setModalKind("department")}
-          disabled={!faculties.length}
-        />
-        <RelatedList
-          title="Salones"
-          emptyLabel="No hay salones registrados"
-          items={classrooms}
-          icon={DoorOpen}
-          getMeta={(item) =>
-            [item.faculty?.name, item.building, item.room]
-              .filter(Boolean)
-              .join(" / ") || "Sin ubicacion"
-          }
-          onCreate={() => setModalKind("classroom")}
-          disabled={!faculties.length}
-        />
-      </section>
-
-      {modalKind && (
-        <CreateModal
-          kind={modalKind}
-          faculties={faculties}
+      <section className="grid gap-6 xl:grid-cols-[420px_1fr]">
+        <FacultyForm
+          key={formState.faculty?.id ?? formState.mode}
+          mode={formState.mode}
+          faculty={formState.faculty}
           isSaving={isSaving}
-          onClose={() => setModalKind(null)}
-          onSubmit={handleCreate}
+          onSubmit={handleSubmit}
+          onCancel={cancelEdit}
+        />
+
+        <article className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-col gap-4 border-b border-slate-100 p-6 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-lg font-bold text-[#031b46]">
+                Facultades registradas
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                {faculties.length} facultades en el sistema.
+              </p>
+            </div>
+
+            <div className="flex w-full items-center rounded-xl border border-slate-200 bg-white px-3 py-2 md:w-80">
+              <Search className="mr-2 h-4 w-4 text-slate-400" />
+              <input
+                type="search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Buscar facultad..."
+                className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
+              />
+            </div>
+          </div>
+
+          {isLoading ? (
+            <LoadingState />
+          ) : filteredFaculties.length === 0 ? (
+            <EmptyState hasQuery={query.trim().length > 0} />
+          ) : (
+            <FacultyTable
+              faculties={filteredFaculties}
+              onEdit={startEdit}
+              onDelete={(faculty) =>
+                setDeleteState({ faculty, isDeleting: false })
+              }
+            />
+          )}
+        </article>
+      </section>
+
+      {deleteState && (
+        <DeleteConfirmation
+          state={deleteState}
+          onClose={() => setDeleteState(null)}
+          onConfirm={() => void handleDelete()}
         />
       )}
     </div>
   );
 }
 
-function StatCard({
-  label,
-  value,
-  icon: Icon,
-  onCreate,
-  disabled = false,
+function FacultyForm({
+  mode,
+  faculty,
+  isSaving,
+  onSubmit,
+  onCancel,
 }: {
-  label: string;
-  value: number;
-  icon: typeof Building2;
-  onCreate: () => void;
-  disabled?: boolean;
+  mode: FormMode;
+  faculty: Faculty | null;
+  isSaving: boolean;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onCancel: () => void;
+}) {
+  const isEdit = mode === "edit";
+
+  return (
+    <article className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="mb-6 flex items-start gap-3">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-400/10 text-amber-500">
+          <Building2 className="h-6 w-6" />
+        </div>
+        <div>
+          <h2 className="text-lg font-bold text-[#031b46]">
+            {isEdit ? "Editar facultad" : "Crear facultad"}
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            {isEdit
+              ? "Actualiza los datos institucionales de la facultad."
+              : "Registra una nueva facultad académica."}
+          </p>
+        </div>
+      </div>
+
+      <form onSubmit={onSubmit} className="space-y-5">
+        <FormField label="Código" htmlFor="faculty-code">
+          <input
+            id="faculty-code"
+            name="code"
+            type="text"
+            required
+            minLength={2}
+            maxLength={20}
+            defaultValue={faculty?.code ?? ""}
+            placeholder="Ej: FING"
+            className={inputClassName}
+          />
+        </FormField>
+
+        <FormField label="Nombre" htmlFor="faculty-name">
+          <input
+            id="faculty-name"
+            name="name"
+            type="text"
+            required
+            minLength={2}
+            maxLength={160}
+            defaultValue={faculty?.name ?? ""}
+            placeholder="Facultad de Ingeniería"
+            className={inputClassName}
+          />
+        </FormField>
+
+        <FormField label="Descripción" htmlFor="faculty-description">
+          <textarea
+            id="faculty-description"
+            name="description"
+            rows={5}
+            defaultValue={faculty?.description ?? ""}
+            placeholder="Descripción opcional"
+            className={`${inputClassName} h-auto resize-none py-3`}
+          />
+        </FormField>
+
+        <div className="flex flex-col gap-3 border-t border-slate-100 pt-5 sm:flex-row">
+          <button
+            type="submit"
+            disabled={isSaving}
+            className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-[#031b46] px-4 text-sm font-bold text-white transition hover:bg-[#05265f] disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            {isSaving ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : isEdit ? (
+              <Edit3 className="h-4 w-4" />
+            ) : (
+              <Plus className="h-4 w-4" />
+            )}
+            {isEdit ? "Guardar cambios" : "Crear facultad"}
+          </button>
+
+          {isEdit && (
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={isSaving}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              <X className="h-4 w-4" />
+              Cancelar
+            </button>
+          )}
+        </div>
+      </form>
+    </article>
+  );
+}
+
+function FacultyTable({
+  faculties,
+  onEdit,
+  onDelete,
+}: {
+  faculties: Faculty[];
+  onEdit: (faculty: Faculty) => void;
+  onDelete: (faculty: Faculty) => void;
 }) {
   return (
-    <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-400/10 text-amber-500">
-            <Icon className="h-6 w-6" />
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-220 text-left">
+        <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+          <tr>
+            <th className="px-6 py-4 font-bold">Facultad</th>
+            <th className="px-6 py-4 font-bold">Código</th>
+            <th className="px-6 py-4 font-bold">Escuelas</th>
+            <th className="px-6 py-4 font-bold">Departamentos</th>
+            <th className="px-6 py-4 font-bold">Salones</th>
+            <th className="px-6 py-4 text-right font-bold">Acciones</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {faculties.map((faculty) => (
+            <tr key={faculty.id} className="transition hover:bg-slate-50">
+              <td className="px-6 py-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#031b46]/5 text-[#031b46]">
+                    <Building2 className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-bold text-slate-800">{faculty.name}</p>
+                    <p className="mt-1 line-clamp-1 max-w-xl text-xs text-slate-500">
+                      {faculty.description ?? "Sin descripción registrada"}
+                    </p>
+                  </div>
+                </div>
+              </td>
+              <td className="px-6 py-4">
+                <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-700">
+                  {faculty.code}
+                </span>
+              </td>
+              <td className="px-6 py-4 text-sm font-semibold text-slate-700">
+                {faculty._count?.schools ?? 0}
+              </td>
+              <td className="px-6 py-4 text-sm font-semibold text-slate-700">
+                {faculty._count?.departments ?? 0}
+              </td>
+              <td className="px-6 py-4 text-sm font-semibold text-slate-700">
+                {faculty._count?.classrooms ?? 0}
+              </td>
+              <td className="px-6 py-4">
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onEdit(faculty)}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-amber-300 hover:bg-amber-50 hover:text-amber-600"
+                    aria-label={`Editar ${faculty.name}`}
+                  >
+                    <Edit3 className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onDelete(faculty)}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+                    aria-label={`Eliminar ${faculty.name}`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function DeleteConfirmation({
+  state,
+  onClose,
+  onConfirm,
+}: {
+  state: DeleteState;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 px-4 py-6">
+      <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
+        <div className="flex gap-4">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600">
+            <AlertTriangle className="h-6 w-6" />
           </div>
           <div>
-            <p className="text-sm font-bold text-[#031b46]">{label}</p>
-            <p className="mt-1 text-3xl font-bold text-[#031b46]">{value}</p>
+            <h2 className="text-lg font-bold text-[#031b46]">
+              Eliminar facultad
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              Esta acción eliminará la facultad{" "}
+              <span className="font-bold text-slate-800">
+                {state.faculty.name}
+              </span>
+              . Si tiene escuelas, departamentos o salones asociados, el
+              sistema rechazará la operación.
+            </p>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={onCreate}
-          disabled={disabled}
-          className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#031b46] text-white transition hover:bg-[#05265f] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
-          aria-label={`Crear ${label.toLowerCase()}`}
-        >
-          <Plus className="h-5 w-5" />
-        </button>
+
+        <div className="mt-6 flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={state.isDeleting}
+            className="inline-flex h-11 items-center justify-center rounded-xl border border-slate-200 px-5 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={state.isDeleting}
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-red-600 px-5 text-sm font-bold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            {state.isDeleting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Trash2 className="h-4 w-4" />
+            )}
+            Eliminar
+          </button>
+        </div>
       </div>
-    </article>
+    </div>
   );
 }
 
 function LoadingState() {
   return (
-    <div className="flex min-h-80 items-center justify-center gap-3 text-sm font-semibold text-slate-500">
+    <div className="flex min-h-96 items-center justify-center gap-3 text-sm font-semibold text-slate-500">
       <Loader2 className="h-5 w-5 animate-spin text-amber-500" />
-      Cargando estructura academica...
+      Cargando facultades...
     </div>
   );
 }
 
-function EmptyState({ onCreate }: { onCreate: () => void }) {
+function EmptyState({ hasQuery }: { hasQuery: boolean }) {
   return (
-    <div className="flex min-h-80 flex-col items-center justify-center p-8 text-center">
+    <div className="flex min-h-96 flex-col items-center justify-center p-8 text-center">
       <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-400/10 text-amber-500">
         <Building2 className="h-8 w-8" />
       </div>
       <h3 className="mt-4 text-lg font-bold text-[#031b46]">
-        No hay facultades registradas
+        {hasQuery ? "Sin resultados" : "No hay facultades registradas"}
       </h3>
-      <button
-        type="button"
-        onClick={onCreate}
-        className="mt-5 inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#031b46] px-4 text-sm font-bold text-white transition hover:bg-[#05265f]"
-      >
-        <Plus className="h-4 w-4" />
-        Crear facultad
-      </button>
+      <p className="mt-2 max-w-md text-sm text-slate-500">
+        {hasQuery
+          ? "Prueba con otro nombre, código o descripción."
+          : "Crea la primera facultad usando el formulario."}
+      </p>
     </div>
   );
 }
 
-function RelatedList<T extends { id: string; code: string; name?: string }>({
-  title,
-  emptyLabel,
-  items,
-  icon: Icon,
-  getMeta,
-  onCreate,
-  disabled,
+function Alert({
+  tone,
+  message,
 }: {
-  title: string;
-  emptyLabel: string;
-  items: T[];
-  icon: typeof Building2;
-  getMeta: (item: T) => string;
-  onCreate: () => void;
-  disabled: boolean;
+  tone: "success" | "error";
+  message: string;
 }) {
-  return (
-    <article className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex items-center justify-between border-b border-slate-100 p-5">
-        <h3 className="text-lg font-bold text-[#031b46]">{title}</h3>
-        <button
-          type="button"
-          onClick={onCreate}
-          disabled={disabled}
-          className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-amber-300 hover:bg-amber-50 hover:text-amber-600 disabled:cursor-not-allowed disabled:opacity-50"
-          aria-label={`Crear ${title.toLowerCase()}`}
-        >
-          <Plus className="h-4 w-4" />
-        </button>
-      </div>
-
-      {items.length === 0 ? (
-        <div className="flex min-h-48 flex-col items-center justify-center p-6 text-center text-sm text-slate-500">
-          <Icon className="mb-3 h-8 w-8 text-slate-300" />
-          {emptyLabel}
-        </div>
-      ) : (
-        <div className="max-h-96 divide-y divide-slate-100 overflow-auto">
-          {items.map((item) => (
-            <div key={item.id} className="flex items-center gap-3 p-4">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#031b46]/5 text-[#031b46]">
-                <Icon className="h-5 w-5" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-bold text-slate-800">
-                  {item.name ?? item.code}
-                </p>
-                <p className="mt-1 truncate text-xs text-slate-500">
-                  {item.code} · {getMeta(item)}
-                </p>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </article>
-  );
-}
-
-function CreateModal({
-  kind,
-  faculties,
-  isSaving,
-  onClose,
-  onSubmit,
-}: {
-  kind: ModalKind;
-  faculties: Faculty[];
-  isSaving: boolean;
-  onClose: () => void;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-}) {
-  const needsFaculty = kind !== "faculty";
+  const isSuccess = tone === "success";
+  const Icon = isSuccess ? CheckCircle2 : AlertTriangle;
+  const className = isSuccess
+    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+    : "border-red-200 bg-red-50 text-red-700";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 px-4 py-6">
-      <div className="w-full max-w-xl overflow-hidden rounded-2xl bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
-          <div>
-            <h2 className="text-xl font-bold text-[#031b46]">
-              {modalLabels[kind]}
-            </h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Completa los datos requeridos para registrar el elemento.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition hover:bg-slate-50 hover:text-slate-800"
-            aria-label="Cerrar modal"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        <form onSubmit={onSubmit} className="space-y-5 px-6 py-6">
-          {needsFaculty && (
-            <FormField label="Facultad" htmlFor="facultyId">
-              <select
-                id="facultyId"
-                name="facultyId"
-                required
-                className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm outline-none transition focus:border-amber-400 focus:ring-4 focus:ring-amber-400/10"
-              >
-                <option value="">Selecciona una facultad</option>
-                {faculties.map((faculty) => (
-                  <option key={faculty.id} value={faculty.id}>
-                    {faculty.name}
-                  </option>
-                ))}
-              </select>
-            </FormField>
-          )}
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <FormField label="Codigo" htmlFor="code">
-              <input
-                id="code"
-                name="code"
-                type="text"
-                required
-                placeholder={kind === "classroom" ? "Ej: A-101" : "Ej: FING"}
-                className="h-12 w-full rounded-xl border border-slate-200 px-4 text-sm outline-none transition placeholder:text-slate-400 focus:border-amber-400 focus:ring-4 focus:ring-amber-400/10"
-              />
-            </FormField>
-
-            {kind !== "classroom" ? (
-              <FormField label="Nombre" htmlFor="name">
-                <input
-                  id="name"
-                  name="name"
-                  type="text"
-                  required
-                  placeholder="Nombre"
-                  className="h-12 w-full rounded-xl border border-slate-200 px-4 text-sm outline-none transition placeholder:text-slate-400 focus:border-amber-400 focus:ring-4 focus:ring-amber-400/10"
-                />
-              </FormField>
-            ) : (
-              <FormField label="Capacidad" htmlFor="capacity">
-                <input
-                  id="capacity"
-                  name="capacity"
-                  type="number"
-                  min={1}
-                  placeholder="Ej: 40"
-                  className="h-12 w-full rounded-xl border border-slate-200 px-4 text-sm outline-none transition placeholder:text-slate-400 focus:border-amber-400 focus:ring-4 focus:ring-amber-400/10"
-                />
-              </FormField>
-            )}
-          </div>
-
-          {kind === "classroom" ? (
-            <div className="grid gap-4 md:grid-cols-2">
-              <FormField label="Edificio" htmlFor="building">
-                <input
-                  id="building"
-                  name="building"
-                  type="text"
-                  placeholder="Ej: Edificio A"
-                  className="h-12 w-full rounded-xl border border-slate-200 px-4 text-sm outline-none transition placeholder:text-slate-400 focus:border-amber-400 focus:ring-4 focus:ring-amber-400/10"
-                />
-              </FormField>
-              <FormField label="Aula" htmlFor="room">
-                <input
-                  id="room"
-                  name="room"
-                  type="text"
-                  placeholder="Ej: 101"
-                  className="h-12 w-full rounded-xl border border-slate-200 px-4 text-sm outline-none transition placeholder:text-slate-400 focus:border-amber-400 focus:ring-4 focus:ring-amber-400/10"
-                />
-              </FormField>
-            </div>
-          ) : (
-            <FormField label="Descripcion" htmlFor="description">
-              <textarea
-                id="description"
-                name="description"
-                rows={4}
-                placeholder="Descripcion opcional"
-                className="w-full resize-none rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-amber-400 focus:ring-4 focus:ring-amber-400/10"
-              />
-            </FormField>
-          )}
-
-          <div className="flex justify-end gap-3 border-t border-slate-100 pt-5">
-            <button
-              type="button"
-              onClick={onClose}
-              className="inline-flex h-11 items-center justify-center rounded-xl border border-slate-200 px-5 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={isSaving}
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#031b46] px-5 text-sm font-bold text-white transition hover:bg-[#05265f] disabled:cursor-not-allowed disabled:opacity-70"
-            >
-              {isSaving ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Plus className="h-4 w-4" />
-              )}
-              Guardar
-            </button>
-          </div>
-        </form>
-      </div>
+    <div
+      className={`flex items-start gap-3 rounded-xl border px-4 py-3 text-sm font-semibold ${className}`}
+    >
+      <Icon className="mt-0.5 h-4 w-4 shrink-0" />
+      <p>{message}</p>
     </div>
   );
 }
@@ -729,51 +636,30 @@ function FormField({
   );
 }
 
-function getPayload(kind: ModalKind, formData: FormData) {
-  const base = {
-    code: String(formData.get("code") ?? ""),
-  };
+function formatApiError(result: ApiFacultyResponse | null) {
+  const fieldErrors = result?.errors
+    ? Object.entries(result.errors)
+        .flatMap(([field, messages]) =>
+          (messages ?? []).map((message) => `${getFieldLabel(field)}: ${message}`),
+        )
+        .join(" · ")
+    : "";
 
-  if (kind === "faculty") {
-    return {
-      ...base,
-      name: String(formData.get("name") ?? ""),
-      description: String(formData.get("description") ?? ""),
-    };
-  }
-
-  if (kind === "classroom") {
-    const capacity = String(formData.get("capacity") ?? "").trim();
-
-    return {
-      ...base,
-      facultyId: String(formData.get("facultyId") ?? ""),
-      building: String(formData.get("building") ?? ""),
-      room: String(formData.get("room") ?? ""),
-      ...(capacity ? { capacity: Number(capacity) } : {}),
-    };
-  }
-
-  return {
-    ...base,
-    facultyId: String(formData.get("facultyId") ?? ""),
-    name: String(formData.get("name") ?? ""),
-    description: String(formData.get("description") ?? ""),
-  };
-}
-
-function countByFaculty<T extends { facultyId: string }>(
-  items: T[],
-  facultyId: string,
-) {
-  return items.filter((item) => item.facultyId === facultyId).length;
-}
-
-function isModalKind(value: string | null): value is ModalKind {
   return (
-    value === "faculty" ||
-    value === "school" ||
-    value === "department" ||
-    value === "classroom"
+    [result?.message, fieldErrors].filter(Boolean).join(" · ") ||
+    "No se pudo completar la operación."
   );
 }
+
+function getFieldLabel(field: string) {
+  const labels: Record<string, string> = {
+    code: "Código",
+    name: "Nombre",
+    description: "Descripción",
+  };
+
+  return labels[field] ?? field;
+}
+
+const inputClassName =
+  "h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-amber-400 focus:ring-4 focus:ring-amber-400/10";

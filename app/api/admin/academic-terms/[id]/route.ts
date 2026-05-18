@@ -70,7 +70,15 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   const { id } = await params;
 
   try {
-    const data = academicTermUpdateSchema.parse(await request.json());
+    const parsed = academicTermUpdateSchema.parse(await request.json());
+    const data = {
+      ...(parsed.code !== undefined ? { code: parsed.code } : {}),
+      ...(parsed.year !== undefined ? { year: parsed.year } : {}),
+      ...(parsed.period !== undefined ? { period: parsed.period } : {}),
+      ...(parsed.startsAt !== undefined ? { startsAt: parsed.startsAt } : {}),
+      ...(parsed.endsAt !== undefined ? { endsAt: parsed.endsAt } : {}),
+      ...(parsed.status !== undefined ? { status: parsed.status } : {}),
+    };
 
     const term = await prisma.academicTerm.update({
       where: { id },

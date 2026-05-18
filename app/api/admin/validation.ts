@@ -32,7 +32,14 @@ const booleanValue = z.coerce.boolean();
 export const curriculumStatusSchema = z.enum(["DRAFT", "ACTIVE", "ARCHIVED"]);
 export const academicPeriodSchema = z.enum(["FIRST", "SECOND", "SUMMER"]);
 export const termStatusSchema = z.enum(["PLANNED", "ACTIVE", "CLOSED"]);
+export const enrollmentPeriodStatusSchema = z.enum([
+  "SCHEDULED",
+  "OPEN",
+  "CLOSED",
+  "CANCELLED",
+]);
 export const userStatusSchema = z.enum(["ACTIVE", "INACTIVE", "SUSPENDED"]);
+export const requirementTypeSchema = z.enum(["REQUIRED", "ELECTIVE"]);
 export const modalitySchema = z.enum(["IN_PERSON", "ONLINE", "HYBRID"]);
 export const sectionStatusSchema = z.enum([
   "PLANNED",
@@ -72,6 +79,31 @@ export const schoolUpdateSchema = schoolCreateSchema.partial().refine(
   (data) => Object.keys(data).length > 0,
   { message: "Debes enviar al menos un campo para actualizar" },
 );
+
+export const careerCreateSchema = z.object({
+  schoolId: id,
+  code,
+  name,
+  description: optionalText,
+});
+
+export const careerUpdateSchema = careerCreateSchema.partial().refine(
+  (data) => Object.keys(data).length > 0,
+  { message: "Debes enviar al menos un campo para actualizar" },
+);
+
+export const careerOptionCreateSchema = z.object({
+  careerId: id,
+  code,
+  name,
+  description: optionalText,
+});
+
+export const careerOptionUpdateSchema = careerOptionCreateSchema
+  .partial()
+  .refine((data) => Object.keys(data).length > 0, {
+    message: "Debes enviar al menos un campo para actualizar",
+  });
 
 export const departmentCreateSchema = z.object({
   facultyId: id,
@@ -128,6 +160,54 @@ export const curriculumUpdateSchema = curriculumCreateSchema.partial().refine(
   { message: "Debes enviar al menos un campo para actualizar" },
 );
 
+const electiveGroupBaseSchema = z.object({
+  curriculumId: id,
+  name,
+  semesterNumber: z.coerce.number().int().positive(),
+  requiredCredits: nullablePositiveInt,
+  requiredSubjects: nullablePositiveInt,
+});
+
+export const electiveGroupCreateSchema = electiveGroupBaseSchema.refine(
+  (data) => data.requiredCredits != null || data.requiredSubjects != null,
+  {
+    message: "Debes indicar creditos requeridos o materias requeridas",
+    path: ["requiredCredits"],
+  },
+);
+
+export const electiveGroupUpdateSchema = electiveGroupBaseSchema
+  .partial()
+  .refine((data) => Object.keys(data).length > 0, {
+    message: "Debes enviar al menos un campo para actualizar",
+  });
+
+const curriculumSubjectBaseSchema = z.object({
+  curriculumId: id,
+  subjectId: id,
+  electiveGroupId: optionalId,
+  requirementType: requirementTypeSchema,
+  semesterNumber: z.coerce.number().int().positive(),
+  credits: z.coerce.number().int().positive(),
+  minPassingGrade: z.coerce.number().min(0).max(20).optional(),
+});
+
+export const curriculumSubjectCreateSchema =
+  curriculumSubjectBaseSchema.refine(
+    (data) =>
+      data.requirementType === "ELECTIVE" || data.electiveGroupId == null,
+    {
+      message: "Una materia obligatoria no debe pertenecer a un grupo electivo",
+      path: ["electiveGroupId"],
+    },
+  );
+
+export const curriculumSubjectUpdateSchema = curriculumSubjectBaseSchema
+  .partial()
+  .refine((data) => Object.keys(data).length > 0, {
+    message: "Debes enviar al menos un campo para actualizar",
+  });
+
 const academicTermBaseSchema = z.object({
   code,
   year: z.coerce.number().int().min(1900).max(2200),
@@ -148,6 +228,43 @@ export const academicTermCreateSchema = academicTermBaseSchema.refine(
 );
 
 export const academicTermUpdateSchema = academicTermBaseSchema
+  .partial()
+  .refine((data) => Object.keys(data).length > 0, {
+    message: "Debes enviar al menos un campo para actualizar",
+  })
+  .refine(
+    (data) => {
+      if (!data.startsAt || !data.endsAt) return true;
+      return data.endsAt >= data.startsAt;
+    },
+    {
+      message:
+        "La fecha de fin debe ser posterior o igual a la fecha de inicio",
+      path: ["endsAt"],
+  },
+);
+
+const enrollmentPeriodBaseSchema = z.object({
+  termId: id,
+  name,
+  startsAt: dateValue,
+  endsAt: dateValue,
+  status: enrollmentPeriodStatusSchema.optional(),
+  facultyId: optionalId,
+  schoolId: optionalId,
+  careerId: optionalId,
+  careerOptionId: optionalId,
+});
+
+export const enrollmentPeriodCreateSchema = enrollmentPeriodBaseSchema.refine(
+  (data) => data.endsAt >= data.startsAt,
+  {
+    message: "La fecha de fin debe ser posterior o igual a la fecha de inicio",
+    path: ["endsAt"],
+  },
+);
+
+export const enrollmentPeriodUpdateSchema = enrollmentPeriodBaseSchema
   .partial()
   .refine((data) => Object.keys(data).length > 0, {
     message: "Debes enviar al menos un campo para actualizar",

@@ -59,3 +59,51 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     return handleApiError(error, "Error al actualizar la facultad");
   }
 }
+
+export async function DELETE(_request: Request, { params }: RouteParams) {
+  const authError = await requireApiAdmin();
+  if (authError) return authError;
+
+  const { id } = await params;
+
+  try {
+    const faculty = await prisma.faculty.findUnique({
+      where: { id },
+      include: {
+        _count: {
+          select: {
+            schools: true,
+            departments: true,
+            classrooms: true,
+          },
+        },
+      },
+    });
+
+    if (!faculty) {
+      return jsonError("Facultad no encontrada", 404);
+    }
+
+    const relatedRecords =
+      faculty._count.schools +
+      faculty._count.departments +
+      faculty._count.classrooms;
+
+    if (relatedRecords > 0) {
+      return jsonError(
+        "No se puede eliminar una facultad con escuelas, departamentos o salones asociados",
+        409,
+      );
+    }
+
+    await prisma.faculty.delete({
+      where: { id },
+    });
+
+    return NextResponse.json({
+      message: "Facultad eliminada correctamente",
+    });
+  } catch (error) {
+    return handleApiError(error, "Error al eliminar la facultad");
+  }
+}
