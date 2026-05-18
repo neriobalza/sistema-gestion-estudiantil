@@ -2,6 +2,7 @@
 
 import {
   AlertTriangle,
+  ArrowUpRight,
   Building2,
   CheckCircle2,
   Edit3,
@@ -12,6 +13,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 type Faculty = {
@@ -120,17 +122,13 @@ export function FacultiesAdminClient() {
 
     const form = event.currentTarget;
     const formData = new FormData(form);
-    const payload = {
-      code: String(formData.get("code") ?? ""),
-      name: String(formData.get("name") ?? ""),
-      description: String(formData.get("description") ?? ""),
-    };
+    const payload = buildFacultyPayload(formData);
 
     const editingFaculty =
       formState.mode === "edit" ? formState.faculty : null;
     const isEdit = editingFaculty !== null;
     const url = isEdit
-      ? `/api/admin/faculties/${editingFaculty.id}`
+      ? `/api/admin/faculties/${encodeURIComponent(editingFaculty.id)}`
       : "/api/admin/faculties";
 
     setIsSaving(true);
@@ -147,12 +145,10 @@ export function FacultiesAdminClient() {
         body: JSON.stringify(payload),
       });
 
-      const result = (await response.json().catch(() => null)) as
-        | ApiFacultyResponse
-        | null;
+      const result = await readFacultyResponse(response);
 
       if (!response.ok) {
-        throw new Error(formatApiError(result));
+        throw new Error(formatApiError(result, response.status));
       }
 
       form.reset();
@@ -185,17 +181,18 @@ export function FacultiesAdminClient() {
     setErrorMessage("");
 
     try {
-      const response = await fetch(`/api/admin/faculties/${faculty.id}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
+      const response = await fetch(
+        `/api/admin/faculties/${encodeURIComponent(faculty.id)}`,
+        {
+          method: "DELETE",
+          credentials: "include",
+        },
+      );
 
-      const result = (await response.json().catch(() => null)) as
-        | ApiFacultyResponse
-        | null;
+      const result = await readFacultyResponse(response);
 
       if (!response.ok) {
-        throw new Error(formatApiError(result));
+        throw new Error(formatApiError(result, response.status));
       }
 
       setDeleteState(null);
@@ -479,6 +476,13 @@ function FacultyTable({
               </td>
               <td className="px-6 py-4">
                 <div className="flex justify-end gap-2">
+                  <Link
+                    href={`/admin/faculties/${faculty.id}`}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
+                    aria-label={`Ver detalle de ${faculty.name}`}
+                  >
+                    <ArrowUpRight className="h-4 w-4" />
+                  </Link>
                   <button
                     type="button"
                     onClick={() => onEdit(faculty)}
@@ -636,7 +640,29 @@ function FormField({
   );
 }
 
-function formatApiError(result: ApiFacultyResponse | null) {
+async function readFacultyResponse(response: Response) {
+  const contentType = response.headers.get("content-type") ?? "";
+
+  if (!contentType.includes("application/json")) {
+    const text = await response.text().catch(() => "");
+
+    return {
+      message: text.trim() || undefined,
+    } satisfies ApiFacultyResponse;
+  }
+
+  return (await response.json().catch(() => null)) as ApiFacultyResponse | null;
+}
+
+function buildFacultyPayload(formData: FormData) {
+  return {
+    code: String(formData.get("code") ?? "").trim(),
+    name: String(formData.get("name") ?? "").trim(),
+    description: String(formData.get("description") ?? "").trim(),
+  };
+}
+
+function formatApiError(result: ApiFacultyResponse | null, status?: number) {
   const fieldErrors = result?.errors
     ? Object.entries(result.errors)
         .flatMap(([field, messages]) =>
@@ -647,7 +673,7 @@ function formatApiError(result: ApiFacultyResponse | null) {
 
   return (
     [result?.message, fieldErrors].filter(Boolean).join(" · ") ||
-    "No se pudo completar la operación."
+    `No se pudo completar la operación${status ? ` (HTTP ${status})` : ""}.`
   );
 }
 

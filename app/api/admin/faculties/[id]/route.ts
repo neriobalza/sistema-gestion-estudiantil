@@ -49,6 +49,15 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     const faculty = await prisma.faculty.update({
       where: { id },
       data,
+      include: {
+        _count: {
+          select: {
+            schools: true,
+            departments: true,
+            classrooms: true,
+          },
+        },
+      },
     });
 
     return NextResponse.json({
@@ -96,14 +105,33 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
       );
     }
 
-    await prisma.faculty.delete({
-      where: { id },
-    });
+    await prisma.$transaction([
+      prisma.enrollmentPeriod.updateMany({
+        where: {
+          facultyId: id,
+        },
+        data: {
+          facultyId: null,
+        },
+      }),
+      prisma.faculty.delete({
+        where: { id },
+      }),
+    ]);
 
     return NextResponse.json({
       message: "Facultad eliminada correctamente",
     });
   } catch (error) {
+    const prismaError = error as { code?: string };
+
+    if (prismaError.code === "P2003") {
+      return jsonError(
+        "No se puede eliminar la facultad porque tiene registros academicos asociados",
+        409,
+      );
+    }
+
     return handleApiError(error, "Error al eliminar la facultad");
   }
 }
