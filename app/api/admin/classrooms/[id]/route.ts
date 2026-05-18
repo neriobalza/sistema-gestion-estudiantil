@@ -62,3 +62,46 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     return handleApiError(error, "Error al actualizar el salon");
   }
 }
+
+export async function DELETE(_request: Request, { params }: RouteParams) {
+  const authError = await requireApiAdmin();
+  if (authError) return authError;
+
+  const { id } = await params;
+
+  try {
+    const classroom = await prisma.classroom.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+
+    if (!classroom) {
+      return jsonError("Salon no encontrado", 404);
+    }
+
+    await prisma.$transaction([
+      prisma.sectionSchedule.updateMany({
+        where: { classroomId: id },
+        data: { classroomId: null },
+      }),
+      prisma.classroom.delete({
+        where: { id },
+      }),
+    ]);
+
+    return NextResponse.json({
+      message: "Salon eliminado correctamente",
+    });
+  } catch (error) {
+    const prismaError = error as { code?: string };
+
+    if (prismaError.code === "P2003") {
+      return jsonError(
+        "No se puede eliminar el salon porque tiene registros asociados",
+        409,
+      );
+    }
+
+    return handleApiError(error, "Error al eliminar el salon");
+  }
+}
