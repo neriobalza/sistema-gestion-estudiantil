@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/src/lib/prisma";
 import { handleApiError, requireApiAdmin } from "@/src/lib/api/admin";
 import { courseSectionCreateSchema } from "../validation";
+import { validateSectionScheduleAvailability } from "./schedule-conflicts";
 
 export async function GET(request: Request) {
   const authError = await requireApiAdmin();
@@ -66,6 +67,12 @@ export async function POST(request: Request) {
     const { schedules, ...data } = courseSectionCreateSchema.parse(
       await request.json(),
     );
+    const scheduleConflict = await validateSectionScheduleAvailability({
+      termId: data.termId,
+      schedules,
+    });
+
+    if (scheduleConflict) return scheduleConflict;
 
     const section = await prisma.courseSection.create({
       data: {

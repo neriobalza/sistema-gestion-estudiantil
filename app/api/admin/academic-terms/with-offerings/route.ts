@@ -6,6 +6,7 @@ import {
   requireApiAdmin,
 } from "@/src/lib/api/admin";
 import { academicTermWithOfferingsCreateSchema } from "../../validation";
+import { validateBatchScheduleAvailability } from "../../course-sections/schedule-conflicts";
 
 export async function POST(request: Request) {
   const authError = await requireApiAdmin();
@@ -150,6 +151,15 @@ async function validateOfferingRelations(
 
     sectionKeys.add(sectionKey);
   }
+
+  const scheduleConflict = validateBatchScheduleAvailability(
+    data.offerings.map((offering) => ({
+      sectionLabel: `seccion ${offering.sectionCode}`,
+      schedules: offering.schedules,
+    })),
+  );
+
+  if (scheduleConflict) return scheduleConflict;
 
   const [subjects, professors, classrooms] = await Promise.all([
     prisma.subject.findMany({

@@ -6,6 +6,7 @@ import {
   requireApiAdmin,
 } from "@/src/lib/api/admin";
 import { courseSectionUpdateSchema } from "../../validation";
+import { validateSectionScheduleAvailability } from "../schedule-conflicts";
 
 type RouteParams = {
   params: Promise<{ id: string }>;
@@ -66,6 +67,32 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     const { schedules, ...data } = courseSectionUpdateSchema.parse(
       await request.json(),
     );
+    const existingSection = await prisma.courseSection.findUnique({
+      where: { id },
+      select: {
+        termId: true,
+        schedules: {
+          select: {
+            classroomId: true,
+            dayOfWeek: true,
+            startMinute: true,
+            endMinute: true,
+          },
+        },
+      },
+    });
+
+    if (!existingSection) {
+      return jsonError("Seccion no encontrada", 404);
+    }
+
+    const scheduleConflict = await validateSectionScheduleAvailability({
+      termId: data.termId ?? existingSection.termId,
+      schedules: schedules ?? existingSection.schedules,
+      excludeSectionId: id,
+    });
+
+    if (scheduleConflict) return scheduleConflict;
 
     const section = await prisma.courseSection.update({
       where: { id },
