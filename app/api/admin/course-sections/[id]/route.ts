@@ -102,3 +102,44 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     return handleApiError(error, "Error al actualizar la seccion");
   }
 }
+
+export async function DELETE(_request: Request, { params }: RouteParams) {
+  const authError = await requireApiAdmin();
+  if (authError) return authError;
+
+  const { id } = await params;
+
+  try {
+    const section = await prisma.courseSection.findUnique({
+      where: { id },
+      select: {
+        _count: {
+          select: {
+            enrollments: true,
+          },
+        },
+      },
+    });
+
+    if (!section) {
+      return jsonError("Seccion no encontrada", 404);
+    }
+
+    if (section._count.enrollments > 0) {
+      return jsonError(
+        "No puedes eliminar una seccion con estudiantes inscritos",
+        409,
+      );
+    }
+
+    await prisma.courseSection.delete({
+      where: { id },
+    });
+
+    return NextResponse.json({
+      message: "Seccion eliminada correctamente",
+    });
+  } catch (error) {
+    return handleApiError(error, "Error al eliminar la seccion");
+  }
+}

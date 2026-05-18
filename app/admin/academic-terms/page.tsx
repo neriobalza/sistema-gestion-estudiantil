@@ -1,34 +1,82 @@
-import { CalendarDays } from "lucide-react";
+import Link from "next/link";
+import { CalendarDays, Eye } from "lucide-react";
 import { prisma } from "@/src/lib/prisma";
 import { requireAdmin } from "@/src/lib/auth/require-admin";
-import { CreateAcademicTermForm } from "./CreateAcademicTermForm";
+import { CreateAcademicTermOfferForm } from "./CreateAcademicTermOfferForm";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminAcademicTermsPage() {
   await requireAdmin();
 
-  const terms = await prisma.academicTerm.findMany({
-    orderBy: [{ year: "desc" }, { period: "asc" }],
-    include: {
-      _count: {
-        select: {
-          enrollmentPeriods: true,
-          sections: true,
-          admittedStudents: true,
-          curriculaEffective: true,
+  const [terms, faculties, subjects, professors, classrooms] =
+    await Promise.all([
+      prisma.academicTerm.findMany({
+        orderBy: [{ year: "desc" }, { period: "asc" }],
+        include: {
+          _count: {
+            select: {
+              enrollmentPeriods: true,
+              sections: true,
+              admittedStudents: true,
+              curriculaEffective: true,
+            },
+          },
         },
-      },
-    },
-  });
-  const faculties = await prisma.faculty.findMany({
-    orderBy: { name: "asc" },
-    select: {
-      id: true,
-      code: true,
-      name: true,
-    },
-  });
+      }),
+      prisma.faculty.findMany({
+        orderBy: { name: "asc" },
+        select: {
+          id: true,
+          code: true,
+          name: true,
+        },
+      }),
+      prisma.subject.findMany({
+        where: { isActive: true },
+        orderBy: [{ department: { name: "asc" } }, { code: "asc" }],
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          department: {
+            select: {
+              name: true,
+              facultyId: true,
+            },
+          },
+        },
+      }),
+      prisma.professorProfile.findMany({
+        orderBy: { employeeCode: "asc" },
+        select: {
+          id: true,
+          employeeCode: true,
+          user: {
+            select: {
+              name: true,
+            },
+          },
+          department: {
+            select: {
+              facultyId: true,
+              name: true,
+            },
+          },
+        },
+      }),
+      prisma.classroom.findMany({
+        orderBy: [{ faculty: { name: "asc" } }, { code: "asc" }],
+        select: {
+          id: true,
+          facultyId: true,
+          code: true,
+          building: true,
+          room: true,
+          capacity: true,
+        },
+      }),
+    ]);
 
   return (
     <div className="space-y-6">
@@ -42,7 +90,12 @@ export default async function AdminAcademicTermsPage() {
         </p>
       </section>
 
-      <CreateAcademicTermForm faculties={faculties} />
+      <CreateAcademicTermOfferForm
+        faculties={faculties}
+        subjects={subjects}
+        professors={professors}
+        classrooms={classrooms}
+      />
 
       <section className="grid gap-4 md:grid-cols-3">
         <MetricCard label="Períodos" value={terms.length} />
@@ -73,6 +126,7 @@ export default async function AdminAcademicTermsPage() {
                   <th className="px-6 py-4 font-bold">Secciones</th>
                   <th className="px-6 py-4 font-bold">Admitidos</th>
                   <th className="px-6 py-4 font-bold">Estado</th>
+                  <th className="px-6 py-4 text-right font-bold">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -106,6 +160,17 @@ export default async function AdminAcademicTermsPage() {
                     </td>
                     <td className="px-6 py-4">
                       <StatusPill status={term.status} />
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex justify-end">
+                        <Link
+                          href={`/admin/academic-terms/${term.id}`}
+                          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-bold text-[#031b46] transition hover:bg-slate-50"
+                        >
+                          <Eye className="h-4 w-4" />
+                          Ver
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 ))}

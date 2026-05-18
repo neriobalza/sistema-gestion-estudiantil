@@ -347,3 +347,41 @@ export const courseSectionUpdateSchema = z
   .refine((data) => Object.keys(data).length > 0, {
     message: "Debes enviar al menos un campo para actualizar",
   });
+
+const academicTermOfferingSchema = z.object({
+  subjectId: id,
+  professorId: optionalId,
+  sectionCode: z
+    .string()
+    .trim()
+    .min(1)
+    .max(20)
+    .transform((value) => value.toUpperCase()),
+  capacity: z.coerce.number().int().positive(),
+  modality: modalitySchema.optional(),
+  schedules: z.array(sectionScheduleSchema).min(1),
+});
+
+export const academicTermWithOfferingsCreateSchema = z
+  .object({
+    code,
+    year: z.coerce.number().int().min(1900).max(2200),
+    period: academicPeriodSchema,
+    startsAt: dateValue,
+    endsAt: dateValue,
+    status: termStatusSchema.optional(),
+    facultyId: id,
+    enrollmentName: optionalText,
+    enrollmentStartsAt: dateValue,
+    enrollmentEndsAt: dateValue,
+    offerings: z.array(academicTermOfferingSchema).min(1),
+  })
+  .refine((data) => data.endsAt >= data.startsAt, {
+    message: "La fecha de fin debe ser posterior o igual a la fecha de inicio",
+    path: ["endsAt"],
+  })
+  .refine((data) => data.enrollmentEndsAt >= data.enrollmentStartsAt, {
+    message:
+      "La fecha de fin de inscripción debe ser posterior o igual a la fecha de inicio",
+    path: ["enrollmentEndsAt"],
+  });
