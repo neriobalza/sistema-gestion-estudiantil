@@ -3,13 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import {
-  ChevronDown,
-  LayoutDashboard,
-  LogOut,
-  Settings,
-  UserRound,
-} from "lucide-react";
+import { ChevronDown, LayoutDashboard, LogOut, Settings } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { Role } from "@/src/generated/prisma/enums";
 
@@ -53,14 +47,17 @@ export function UserDropdown({ user }: UserDropdownProps) {
     });
   }
 
-  let dashborad_url = "/student";
+  let dashboardUrl = "/student";
+  let settingsUrl = "/student/settings";
 
   switch (user.role) {
     case Role.ADMIN:
-      dashborad_url = "/admin";
+      dashboardUrl = "/admin";
+      settingsUrl = "/admin/settings";
       break;
     case Role.PROFESSOR:
-      dashborad_url = "/professor";
+      dashboardUrl = "/professor";
+      settingsUrl = "/professor/settings";
       break;
   }
 
@@ -142,9 +139,14 @@ export function UserDropdown({ user }: UserDropdownProps) {
 
           <div className="p-2">
             <DropdownLink
-              href={dashborad_url}
+              href={dashboardUrl}
               icon={LayoutDashboard}
               label="Panel de Control"
+            />
+            <DropdownLink
+              href={settingsUrl}
+              icon={Settings}
+              label="Configuración"
             />
 
             <button

@@ -95,6 +95,11 @@ const studentSidebarItems: SidebarItem[] = [
     href: "/student/plan-de-estudio",
     icon: GraduationCap,
   },
+  {
+    label: "Configuración",
+    href: "/student/settings",
+    icon: Settings,
+  },
 ];
 
 const professorSidebarItems: SidebarItem[] = [

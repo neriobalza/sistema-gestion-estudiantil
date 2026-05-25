@@ -1,5 +1,5 @@
 import { AccountSettingsClient } from "@/src/components/settings/AccountSettingsClient";
 
-export default function ProfessorSettingsPage() {
+export default function AdminSettingsPage() {
   return <AccountSettingsClient />;
 }
