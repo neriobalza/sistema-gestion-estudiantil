@@ -181,7 +181,7 @@ export async function POST(request: Request) {
 
     if (!assignedSections) {
       return jsonError(
-        "No hay cupos u horarios compatibles para asignar todas las materias de primer semestre",
+        describeAssignmentFailure(firstSemesterSubjects, sections),
         409,
       );
     }
@@ -351,6 +351,80 @@ function chooseSections(subjects: { id: string }[], sections: CandidateSection[]
   return assignSection(orderedSubjects, sectionsBySubject, [], []);
 }
 
+function describeAssignmentFailure(
+  subjects: { id: string; code: string; name: string }[],
+  sections: CandidateSection[],
+) {
+  const missingSubjects = subjects.filter(
+    (subject) =>
+      !sections.some((section) => section.subjectId === subject.id),
+  );
+
+  if (missingSubjects.length > 0) {
+    return `No hay secciones ofertadas para: ${formatSubjectList(missingSubjects)}`;
+  }
+
+  const fullSubjects = subjects.filter(
+    (subject) =>
+      !sections.some(
+        (section) =>
+          section.subjectId === subject.id &&
+          section._count.enrollments < section.capacity,
+      ),
+  );
+
+  if (fullSubjects.length > 0) {
+    return `No hay cupos disponibles para: ${formatSubjectList(fullSubjects)}`;
+  }
+
+  const availableSections = sections.filter(
+    (section) => section._count.enrollments < section.capacity,
+  );
+  const conflict = findFirstSectionConflict(availableSections);
+
+  if (conflict) {
+    return `No hay horarios compatibles para asignar todas las materias de primer semestre. Conflicto: ${conflict.left.subject.code} ${conflict.left.subject.name} se solapa con ${conflict.right.subject.code} ${conflict.right.subject.name} el ${dayLabel(conflict.block.dayOfWeek)} de ${formatMinutes(conflict.block.startMinute)} a ${formatMinutes(conflict.block.endMinute)}.`;
+  }
+
+  return "No hay cupos u horarios compatibles para asignar todas las materias de primer semestre";
+}
+
+function findFirstSectionConflict(sections: CandidateSection[]) {
+  for (let leftIndex = 0; leftIndex < sections.length; leftIndex += 1) {
+    const left = sections[leftIndex];
+
+    for (let rightIndex = leftIndex + 1; rightIndex < sections.length; rightIndex += 1) {
+      const right = sections[rightIndex];
+      if (left.subjectId === right.subjectId) continue;
+
+      for (const leftSchedule of left.schedules) {
+        for (const rightSchedule of right.schedules) {
+          if (
+            leftSchedule.dayOfWeek === rightSchedule.dayOfWeek &&
+            leftSchedule.startMinute < rightSchedule.endMinute &&
+            leftSchedule.endMinute > rightSchedule.startMinute
+          ) {
+            return {
+              left,
+              right,
+              block: {
+                dayOfWeek: leftSchedule.dayOfWeek,
+                startMinute: Math.max(
+                  leftSchedule.startMinute,
+                  rightSchedule.startMinute,
+                ),
+                endMinute: Math.min(leftSchedule.endMinute, rightSchedule.endMinute),
+              },
+            };
+          }
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
 function assignSection(
   subjects: { id: string }[],
   sectionsBySubject: Map<string, CandidateSection[]>,
@@ -397,4 +471,30 @@ function hasScheduleConflict(block: ScheduleBlock, occupiedBlocks: ScheduleBlock
 
 function createTemporaryPassword() {
   return `Ula-${randomBytes(4).toString("hex")}`;
+}
+
+function formatSubjectList(subjects: { code: string; name: string }[]) {
+  return subjects
+    .map((subject) => `${subject.code} ${subject.name}`)
+    .join(", ");
+}
+
+function formatMinutes(minutes: number) {
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return `${String(hours).padStart(2, "0")}:${String(remainingMinutes).padStart(2, "0")}`;
+}
+
+function dayLabel(day: string) {
+  const labels: Record<string, string> = {
+    MONDAY: "lunes",
+    TUESDAY: "martes",
+    WEDNESDAY: "miercoles",
+    THURSDAY: "jueves",
+    FRIDAY: "viernes",
+    SATURDAY: "sabado",
+    SUNDAY: "domingo",
+  };
+
+  return labels[day] ?? day;
 }

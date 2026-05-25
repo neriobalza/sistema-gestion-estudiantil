@@ -143,8 +143,8 @@ export async function GET() {
         (sum, curriculumSubject) => sum + curriculumSubject.credits,
         0,
       );
-    const activeEnrollments = student.enrollments.filter((enrollment) =>
-      activeEnrollmentStatuses.has(enrollment.status),
+    const activeEnrollments = student.enrollments.filter(
+      isEnrollmentInActiveAcademicTerm,
     );
 
     return NextResponse.json({
@@ -195,6 +195,9 @@ export async function GET() {
             enrollment.finalGrade === null ? null : Number(enrollment.finalGrade),
           gradeStatus: enrollment.gradeStatus,
           termCode: enrollment.section.term.code,
+          termStatus: enrollment.section.term.status,
+          termStartsAt: enrollment.section.term.startsAt.toISOString(),
+          termEndsAt: enrollment.section.term.endsAt.toISOString(),
           enrollmentPeriodName: enrollment.enrollmentPeriod?.name ?? null,
           subject: {
             code: enrollment.section.subject.code,
@@ -270,4 +273,18 @@ function getEnrollmentGroup(average: number | null) {
 
 function roundToTwo(value: number) {
   return Math.round(value * 100) / 100;
+}
+
+function isEnrollmentInActiveAcademicTerm(enrollment: {
+  status: string;
+  section: {
+    term: {
+      status: string;
+    };
+  };
+}) {
+  return (
+    activeEnrollmentStatuses.has(enrollment.status) &&
+    enrollment.section.term.status === "ACTIVE"
+  );
 }

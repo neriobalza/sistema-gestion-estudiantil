@@ -97,6 +97,29 @@ const studentSidebarItems: SidebarItem[] = [
   },
 ];
 
+const professorSidebarItems: SidebarItem[] = [
+  {
+    label: "Dashboard",
+    href: "/professor",
+    icon: LayoutDashboard,
+  },
+  {
+    label: "Secciones",
+    href: "/professor/sections",
+    icon: BookOpen,
+  },
+  {
+    label: "Horario",
+    href: "/professor/schedule",
+    icon: Clock,
+  },
+  {
+    label: "Configuración",
+    href: "/professor/settings",
+    icon: Settings,
+  },
+];
+
 function DashboardSidebarNav({ items }: { items: SidebarItem[] }) {
   const path = usePathname();
 
@@ -111,7 +134,7 @@ function DashboardSidebarNav({ items }: { items: SidebarItem[] }) {
             href={item.href}
             className={[
               "group flex items-center gap-4 rounded-xl px-4 py-3 text-sm font-semibold transition",
-              path === item.href
+              path === item.href || path.startsWith(`${item.href}/`)
                 ? "bg-white/10 text-amber-400 shadow-sm ring-1 ring-white/5"
                 : "text-slate-200 hover:bg-white/10 hover:text-white",
             ].join(" ")}
@@ -119,7 +142,7 @@ function DashboardSidebarNav({ items }: { items: SidebarItem[] }) {
             <Icon
               className={[
                 "h-5 w-5",
-                path === item.href
+                path === item.href || path.startsWith(`${item.href}/`)
                   ? "text-amber-400"
                   : "text-slate-300 group-hover:text-white",
               ].join(" ")}
@@ -138,4 +161,8 @@ export function SidebarNav() {
 
 export function StudentSidebarNav() {
   return <DashboardSidebarNav items={studentSidebarItems} />;
+}
+
+export function ProfessorSidebarNav() {
+  return <DashboardSidebarNav items={professorSidebarItems} />;
 }

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/src/lib/prisma";
+import { TermStatus } from "@/src/generated/prisma/enums";
 import {
   handleApiError,
   jsonError,
@@ -80,10 +81,47 @@ export async function PATCH(request: Request, { params }: RouteParams) {
       ...(parsed.status !== undefined ? { status: parsed.status } : {}),
     };
 
-    const term = await prisma.academicTerm.update({
-      where: { id },
-      data,
-    });
+    const term =
+      parsed.status === TermStatus.CLOSED
+        ? await prisma.$transaction(async (tx) => {
+            const closedTerm = await tx.academicTerm.update({
+              where: { id },
+              data,
+            });
+
+            await tx.sectionEnrollment.updateMany({
+              where: {
+                finalGrade: null,
+                status: {
+                  not: "DROPPED",
+                },
+                section: {
+                  termId: id,
+                },
+              },
+              data: {
+                finalGrade: 0,
+                gradeStatus: "FAILED",
+                approvedAt: null,
+              },
+            });
+
+            await tx.courseSection.updateMany({
+              where: {
+                termId: id,
+                gradesLockedAt: null,
+              },
+              data: {
+                gradesLockedAt: new Date(),
+              },
+            });
+
+            return closedTerm;
+          })
+        : await prisma.academicTerm.update({
+            where: { id },
+            data,
+          });
 
     return NextResponse.json({
       message: "Periodo academico actualizado correctamente",

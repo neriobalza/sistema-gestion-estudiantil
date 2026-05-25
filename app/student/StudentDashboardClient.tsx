@@ -80,6 +80,9 @@ type Enrollment = {
   finalGrade: number | null;
   gradeStatus: string | null;
   termCode: string;
+  termStatus: string;
+  termStartsAt: string;
+  termEndsAt: string;
   enrollmentPeriodName: string | null;
   subject: {
     code: string;
@@ -236,6 +239,9 @@ function StudentHero({ data }: { data: StudentDashboardData }) {
 
 function DashboardOverview({ data }: { data: StudentDashboardData }) {
   const progress = getProgress(data.summary.approvedCredits, data.summary.totalCredits);
+  const activeTermEnrollments = data.enrollments.filter(
+    isEnrollmentInActiveAcademicTerm,
+  );
 
   return (
     <>
@@ -310,7 +316,11 @@ function DashboardOverview({ data }: { data: StudentDashboardData }) {
         </article>
       </section>
 
-      <EnrollmentTable enrollments={data.enrollments.slice(0, 6)} />
+      <EnrollmentTable
+        enrollments={activeTermEnrollments.slice(0, 6)}
+        title="Materias recientes"
+        emptyMessage="No hay materias recientes en un período académico activo."
+      />
     </>
   );
 }
@@ -323,7 +333,7 @@ function ScheduleView({ enrollments }: { enrollments: Enrollment[] }) {
   const blocks = useMemo(
     () =>
       enrollments
-        .filter((enrollment) => activeEnrollmentStatuses.has(enrollment.status))
+        .filter(isEnrollmentInActiveAcademicTerm)
         .flatMap((enrollment) =>
           enrollment.schedules
             .filter((schedule) => weekdayValues.has(schedule.dayOfWeek))
@@ -438,7 +448,7 @@ function ScheduleView({ enrollments }: { enrollments: Enrollment[] }) {
 
 function EnrollmentView({ data }: { data: StudentDashboardData }) {
   const activeEnrollments = data.enrollments.filter((enrollment) =>
-    activeEnrollmentStatuses.has(enrollment.status),
+    isEnrollmentInActiveAcademicTerm(enrollment),
   );
 
   return (
@@ -658,12 +668,14 @@ function CurriculumView({ data }: { data: StudentDashboardData }) {
 function EnrollmentTable({
   enrollments,
   title = "Materias recientes",
+  emptyMessage = "No hay materias para mostrar.",
 }: {
   enrollments: Enrollment[];
   title?: string;
+  emptyMessage?: string;
 }) {
   if (enrollments.length === 0) {
-    return <EmptyState icon={BookOpen} message="No hay materias para mostrar." />;
+    return <EmptyState icon={BookOpen} message={emptyMessage} />;
   }
 
   return (
@@ -804,6 +816,13 @@ function StatusBadge({
 function getProgress(approvedCredits: number, totalCredits: number) {
   if (totalCredits <= 0) return 0;
   return Math.round((approvedCredits / totalCredits) * 100);
+}
+
+function isEnrollmentInActiveAcademicTerm(enrollment: Enrollment) {
+  return (
+    activeEnrollmentStatuses.has(enrollment.status) &&
+    enrollment.termStatus === "ACTIVE"
+  );
 }
 
 const graphNodeWidth = 220;
