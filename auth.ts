@@ -4,7 +4,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/src/lib/prisma";
 import { Role, UserStatus } from "@/src/generated/prisma/enums";
 
-const min = 10;
+const min = 100;
 
 // class InvalidLoginError extends CredentialsSignin {
 //   code = "Invalid identifier or password";

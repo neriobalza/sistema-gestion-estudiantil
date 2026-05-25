@@ -1,8 +1,11 @@
 import Image from "next/image";
 import Link from "next/link";
 import { Compass, LockKeyhole } from "lucide-react";
+import { auth } from "@/auth";
 
-export function Hero() {
+export async function Hero() {
+  const session = await auth();
+
   return (
     <section
       id="inicio"
@@ -36,13 +39,15 @@ export function Hero() {
           </p>
 
           <div className="mt-10 flex flex-col gap-4 sm:flex-row">
-            <Link
-              href="/login"
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-yellow-400 px-6 py-3.5 text-sm font-bold text-[#061b3a] shadow-lg shadow-yellow-400/20 transition hover:bg-yellow-300"
-            >
-              <LockKeyhole size={19} />
-              Iniciar sesión
-            </Link>
+            {!session && (
+              <Link
+                href="/login"
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-yellow-400 px-6 py-3.5 text-sm font-bold text-[#061b3a] shadow-lg shadow-yellow-400/20 transition hover:bg-yellow-300"
+              >
+                <LockKeyhole size={19} />
+                Iniciar sesión
+              </Link>
+            )}
 
             <Link
               href="#servicios"

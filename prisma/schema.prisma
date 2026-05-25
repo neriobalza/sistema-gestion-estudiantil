@@ -103,24 +103,22 @@ enum Modality {
 /**
  * =========================
  * AUTH / USERS
- * Compatible con Auth.js / NextAuth Prisma Adapter
+ * NextAuth/Auth.js con Credentials + JWT
  * =========================
  */
 
 model User {
-  id            String     @id @default(cuid())
-  name          String?
-  email         String     @unique
-  emailVerified DateTime?
+  id              String     @id @default(cuid())
+  name            String?
+  email           String     @unique
   institutionalId String     @unique
+  passwordHash    String
 
-  passwordHash  String?
+  role            Role       @default(STUDENT)
+  status          UserStatus @default(ACTIVE)
 
-  role          Role       @default(STUDENT)
-  status        UserStatus @default(ACTIVE)
-
-  accounts      Account[]
-  sessions      Session[]
+  mustChangePassword Boolean @default(true)
+  lastLoginAt        DateTime?
 
   studentProfile   StudentProfile?
   professorProfile ProfessorProfile?
@@ -133,45 +131,7 @@ model User {
   @@index([status])
 }
 
-model Account {
-  id                String  @id @default(cuid())
-  userId            String
-  type              String
-  provider          String
-  providerAccountId String
 
-  refresh_token     String? @db.Text
-  access_token      String? @db.Text
-  expires_at        Int?
-  token_type        String?
-  scope             String?
-  id_token          String? @db.Text
-  session_state     String?
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([provider, providerAccountId])
-  @@index([userId])
-}
-
-model Session {
-  id           String   @id @default(cuid())
-  sessionToken String   @unique
-  userId       String
-  expires      DateTime
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-}
-
-model VerificationToken {
-  identifier String
-  token      String
-  expires    DateTime
-
-  @@unique([identifier, token])
-}
 
 /**
  * =========================
@@ -186,8 +146,9 @@ model Faculty {
   name        String
   description String?
 
-  careers     Career[]
+  schools     School[]
   departments Department[]
+  classrooms  Classroom[]
 
   enrollmentPeriods EnrollmentPeriod[]
 
@@ -195,13 +156,36 @@ model Faculty {
   updatedAt   DateTime @updatedAt
 }
 
-model Department {
-  id        String  @id @default(cuid())
-  facultyId String
-  code      String
-  name      String
+model School {
+  id          String  @id @default(cuid())
+  facultyId   String
+  code        String
+  name        String
+  description String?
 
-  faculty    Faculty @relation(fields: [facultyId], references: [id], onDelete: Restrict)
+  faculty Faculty @relation(fields: [facultyId], references: [id], onDelete: Restrict)
+
+  careers Career[]
+
+  enrollmentPeriods EnrollmentPeriod[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([facultyId, code])
+  @@index([facultyId])
+}
+
+model Department {
+  id          String  @id @default(cuid())
+  facultyId   String
+  code        String
+  name        String
+  description String?
+
+  faculty Faculty @relation(fields: [facultyId], references: [id], onDelete: Restrict)
+
+  subjects   Subject[]
   professors ProfessorProfile[]
 
   createdAt DateTime @default(now())
@@ -213,12 +197,13 @@ model Department {
 
 model Career {
   id          String  @id @default(cuid())
-  facultyId   String
+  schoolId    String
   code        String
   name        String
   description String?
 
-  faculty Faculty @relation(fields: [facultyId], references: [id], onDelete: Restrict)
+  school School @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+
   options CareerOption[]
 
   enrollmentPeriods EnrollmentPeriod[]
@@ -226,8 +211,8 @@ model Career {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([facultyId, code])
-  @@index([facultyId])
+  @@unique([schoolId, code])
+  @@index([schoolId])
 }
 
 model CareerOption {
@@ -285,6 +270,8 @@ model Curriculum {
  */
 model Subject {
   id           String  @id @default(cuid())
+  departmentId String
+
   code         String  @unique
   name         String
   description  String?
@@ -292,18 +279,18 @@ model Subject {
   hoursPerWeek Int?
   isActive     Boolean @default(true)
 
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+
   curriculumSubjects CurriculumSubject[]
   sections           CourseSection[]
 
-  // Materias que esta materia exige como prerrequisito.
   prerequisites SubjectPrerequisite[] @relation("SubjectPrerequisites")
-
-  // Materias para las cuales esta materia es prerrequisito.
   requiredFor   SubjectPrerequisite[] @relation("PrerequisiteSubjects")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([departmentId])
   @@index([isActive])
 }
 
@@ -489,16 +476,18 @@ model EnrollmentPeriod {
   endsAt    DateTime
   status    EnrollmentPeriodStatus @default(SCHEDULED)
 
-  // Opcional: restringir proceso por facultad, carrera u opción.
   facultyId      String?
+  schoolId       String?
   careerId       String?
   careerOptionId String?
 
   term AcademicTerm @relation(fields: [termId], references: [id], onDelete: Cascade)
 
-  faculty      Faculty?      @relation(fields: [facultyId], references: [id], onDelete: SetNull)
-  career       Career?       @relation(fields: [careerId], references: [id], onDelete: SetNull)
-  careerOption CareerOption? @relation(fields: [careerOptionId], references: [id], onDelete: SetNull)
+  faculty Faculty? @relation(fields: [facultyId], references: [id], onDelete: SetNull)
+  school  School?  @relation(fields: [schoolId], references: [id], onDelete: SetNull)
+  career  Career?  @relation(fields: [careerId], references: [id], onDelete: SetNull)
+
+  careerOption CareerOption? @relation( fields: [careerOptionId], references: [id], onDelete: SetNull)
 
   enrollments SectionEnrollment[]
 
@@ -508,6 +497,7 @@ model EnrollmentPeriod {
   @@index([termId])
   @@index([status])
   @@index([facultyId])
+  @@index([schoolId])
   @@index([careerId])
   @@index([careerOptionId])
 }
@@ -551,16 +541,23 @@ model CourseSection {
 }
 
 model Classroom {
-  id       String  @id @default(cuid())
-  code     String  @unique // Ejemplo: "LAB-01", "AULA-203"
-  building String?
-  room     String?
-  capacity Int?
+  id        String  @id @default(cuid())
+  facultyId String
+
+  code      String
+  building  String?
+  room      String?
+  capacity  Int?
+
+  faculty Faculty @relation(fields: [facultyId], references: [id], onDelete: Restrict)
 
   schedules SectionSchedule[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@unique([facultyId, code])
+  @@index([facultyId])
 }
 
 /**
