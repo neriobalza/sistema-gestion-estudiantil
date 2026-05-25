@@ -147,20 +147,6 @@ export function UserDropdown({ user }: UserDropdownProps) {
               label="Panel de Control"
             />
 
-            <DropdownLink href="/profile" icon={UserRound} label="Mi perfil" />
-
-            {/* <DropdownLink
-              href="/career"
-              icon={GraduationCap}
-              label="Mi carrera"
-            /> */}
-
-            <DropdownLink
-              href="/settings"
-              icon={Settings}
-              label="Configuración"
-            />
-
             <button
               type="button"
               onClick={handleSignOut}
