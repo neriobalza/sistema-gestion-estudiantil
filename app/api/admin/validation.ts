@@ -221,6 +221,11 @@ export const curriculumSubjectUpdateSchema = curriculumSubjectBaseSchema
     message: "Debes enviar al menos un campo para actualizar",
   });
 
+export const subjectPrerequisiteSchema = z.object({
+  subjectId: id,
+  prerequisiteId: id,
+});
+
 const academicTermBaseSchema = z.object({
   code,
   year: z.coerce.number().int().min(1900).max(2200),

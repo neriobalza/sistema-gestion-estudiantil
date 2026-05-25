@@ -57,6 +57,40 @@ export async function POST(request: Request) {
 
   try {
     const data = curriculumSubjectCreateSchema.parse(await request.json());
+    const [curriculum, subject, electiveGroup] = await Promise.all([
+      prisma.curriculum.findUnique({
+        where: { id: data.curriculumId },
+        select: { id: true },
+      }),
+      prisma.subject.findUnique({
+        where: { id: data.subjectId },
+        select: { id: true, isActive: true },
+      }),
+      data.electiveGroupId
+        ? prisma.electiveGroup.findUnique({
+            where: { id: data.electiveGroupId },
+            select: { curriculumId: true },
+          })
+        : Promise.resolve(null),
+    ]);
+
+    if (!curriculum) {
+      return NextResponse.json({ message: "Pensum no encontrado" }, { status: 404 });
+    }
+
+    if (!subject || !subject.isActive) {
+      return NextResponse.json(
+        { message: "La materia no existe o no esta activa" },
+        { status: 400 },
+      );
+    }
+
+    if (data.electiveGroupId && electiveGroup?.curriculumId !== data.curriculumId) {
+      return NextResponse.json(
+        { message: "El grupo electivo no pertenece a este pensum" },
+        { status: 400 },
+      );
+    }
 
     const curriculumSubject = await prisma.curriculumSubject.create({
       data,

@@ -10,30 +10,10 @@ import {
 } from "lucide-react";
 import { prisma } from "@/src/lib/prisma";
 import { requireAdmin } from "@/src/lib/auth/require-admin";
+import { CurriculumSubjectsManager } from "./CurriculumSubjectsManager";
 
 type CurriculumDetailPageProps = {
   params: Promise<{ id: string }>;
-};
-
-type CurriculumSubjectRow = {
-  id: string;
-  requirementType: string;
-  semesterNumber: number;
-  credits: number;
-  minPassingGrade: unknown;
-  electiveGroup: {
-    name: string;
-  } | null;
-  subject: {
-    code: string;
-    name: string;
-    description: string | null;
-    credits: number;
-    hoursPerWeek: number | null;
-    department: {
-      name: string;
-    };
-  };
 };
 
 export const dynamic = "force-dynamic";
@@ -45,48 +25,70 @@ export default async function CurriculumDetailPage({
 
   const { id } = await params;
 
-  const curriculum = await prisma.curriculum.findUnique({
-    where: { id },
-    include: {
-      careerOption: {
-        include: {
-          career: {
-            include: {
-              school: {
-                include: {
-                  faculty: true,
+  const [curriculum, availableSubjects] = await Promise.all([
+    prisma.curriculum.findUnique({
+      where: { id },
+      include: {
+        careerOption: {
+          include: {
+            career: {
+              include: {
+                school: {
+                  include: {
+                    faculty: true,
+                  },
                 },
               },
             },
           },
         },
-      },
-      effectiveFromTerm: true,
-      subjects: {
-        orderBy: [{ semesterNumber: "asc" }, { subject: { code: "asc" } }],
-        include: {
-          electiveGroup: true,
-          subject: {
-            include: {
-              department: true,
+        effectiveFromTerm: true,
+        subjects: {
+          orderBy: [{ semesterNumber: "asc" }, { subject: { code: "asc" } }],
+          include: {
+            electiveGroup: true,
+            subject: {
+              include: {
+                department: true,
+              },
             },
           },
         },
-      },
-      electiveGroups: {
-        orderBy: [{ semesterNumber: "asc" }, { name: "asc" }],
-      },
-      _count: {
-        select: {
-          students: true,
+        electiveGroups: {
+          orderBy: [{ semesterNumber: "asc" }, { name: "asc" }],
+        },
+        _count: {
+          select: {
+            students: true,
+          },
         },
       },
-    },
-  });
+    }),
+    prisma.subject.findMany({
+      where: { isActive: true },
+      orderBy: [{ code: "asc" }],
+      include: {
+        department: true,
+      },
+    }),
+  ]);
 
   if (!curriculum) {
     notFound();
   }
+
+  const curriculumSubjectIds = curriculum.subjects.map((item) => item.subjectId);
+  const prerequisites = await prisma.subjectPrerequisite.findMany({
+    where: {
+      subjectId: { in: curriculumSubjectIds },
+      prerequisiteId: { in: curriculumSubjectIds },
+    },
+    orderBy: [{ subject: { code: "asc" } }, { prerequisite: { code: "asc" } }],
+    include: {
+      subject: true,
+      prerequisite: true,
+    },
+  });
 
   const requiredSubjects = curriculum.subjects.filter(
     (item) => item.requirementType === "REQUIRED",
@@ -113,9 +115,23 @@ export default async function CurriculumDetailPage({
   const creditSource = curriculum.totalCredits
     ? "Definido en el pensum"
     : "Calculado desde materias y electivas";
-  const semesters = Array.from(
-    new Set(curriculum.subjects.map((item) => item.semesterNumber)),
-  ).sort((a, b) => a - b);
+  const editableSubjects = curriculum.subjects.map((item) => ({
+    ...item,
+    requirementType: item.requirementType,
+    minPassingGrade: String(item.minPassingGrade),
+  }));
+  const editablePrerequisites = prerequisites.map((item) => ({
+    subjectId: item.subjectId,
+    prerequisiteId: item.prerequisiteId,
+    subject: {
+      code: item.subject.code,
+      name: item.subject.name,
+    },
+    prerequisite: {
+      code: item.prerequisite.code,
+      name: item.prerequisite.name,
+    },
+  }));
 
   return (
     <div className="space-y-6">
@@ -234,36 +250,13 @@ export default async function CurriculumDetailPage({
         </section>
       )}
 
-      <section className="space-y-6">
-        <div>
-          <h2 className="text-xl font-bold text-[#031b46]">
-            Materias del pensum
-          </h2>
-          <p className="mt-2 text-sm text-slate-500">
-            Desglose por semestre con unidades de crédito, tipo de requisito y
-            nota mínima aprobatoria.
-          </p>
-        </div>
-
-        {curriculum.subjects.length === 0 ? (
-          <section className="rounded-2xl border border-slate-200 bg-white p-10 text-center shadow-sm">
-            <BookOpen className="mx-auto h-10 w-10 text-slate-300" />
-            <h3 className="mt-4 text-lg font-bold text-[#031b46]">
-              Este pensum no tiene materias registradas
-            </h3>
-          </section>
-        ) : (
-          semesters.map((semester) => (
-            <SemesterTable
-              key={semester}
-              semester={semester}
-              subjects={curriculum.subjects.filter(
-                (item) => item.semesterNumber === semester,
-              )}
-            />
-          ))
-        )}
-      </section>
+      <CurriculumSubjectsManager
+        curriculumId={curriculum.id}
+        subjects={editableSubjects}
+        availableSubjects={availableSubjects}
+        electiveGroups={curriculum.electiveGroups}
+        prerequisites={editablePrerequisites}
+      />
     </div>
   );
 }
@@ -298,95 +291,5 @@ function InfoCard({ label, value }: { label: string; value: string }) {
       <p className="text-sm font-bold text-[#031b46]">{label}</p>
       <p className="mt-2 text-sm font-semibold text-slate-600">{value}</p>
     </article>
-  );
-}
-
-function SemesterTable({
-  semester,
-  subjects,
-}: {
-  semester: number;
-  subjects: CurriculumSubjectRow[];
-}) {
-  const semesterCredits = subjects.reduce((total, item) => total + item.credits, 0);
-
-  return (
-    <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex flex-col gap-2 border-b border-slate-100 p-6 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h3 className="text-lg font-bold text-[#031b46]">
-            Semestre {semester}
-          </h3>
-          <p className="mt-1 text-sm text-slate-500">
-            {subjects.length} materias · {semesterCredits} créditos listados
-          </p>
-        </div>
-      </div>
-
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-240 text-left">
-          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-            <tr>
-              <th className="px-6 py-4 font-bold">Materia</th>
-              <th className="px-6 py-4 font-bold">Departamento</th>
-              <th className="px-6 py-4 font-bold">Tipo</th>
-              <th className="px-6 py-4 font-bold">Grupo electivo</th>
-              <th className="px-6 py-4 font-bold">Créditos</th>
-              <th className="px-6 py-4 font-bold">Horas</th>
-              <th className="px-6 py-4 font-bold">Nota mínima</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {subjects.map((item) => (
-              <tr key={item.id} className="transition hover:bg-slate-50">
-                <td className="px-6 py-4">
-                  <p className="font-bold text-slate-800">
-                    {item.subject.name}
-                  </p>
-                  <p className="mt-1 text-xs font-semibold text-amber-700">
-                    {item.subject.code}
-                  </p>
-                </td>
-                <td className="px-6 py-4 text-sm text-slate-600">
-                  {item.subject.department.name}
-                </td>
-                <td className="px-6 py-4">
-                  <RequirementPill requirementType={item.requirementType} />
-                </td>
-                <td className="px-6 py-4 text-sm text-slate-600">
-                  {item.electiveGroup?.name ?? "No aplica"}
-                </td>
-                <td className="px-6 py-4 text-sm font-semibold text-slate-700">
-                  {item.credits}
-                </td>
-                <td className="px-6 py-4 text-sm text-slate-600">
-                  {item.subject.hoursPerWeek ?? "Sin definir"}
-                </td>
-                <td className="px-6 py-4 text-sm text-slate-600">
-                  {String(item.minPassingGrade)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
-}
-
-function RequirementPill({ requirementType }: { requirementType: string }) {
-  const isRequired = requirementType === "REQUIRED";
-
-  return (
-    <span
-      className={[
-        "rounded-full px-3 py-1 text-xs font-bold",
-        isRequired
-          ? "bg-emerald-50 text-emerald-700"
-          : "bg-blue-50 text-blue-700",
-      ].join(" ")}
-    >
-      {isRequired ? "Obligatoria" : "Electiva"}
-    </span>
   );
 }
