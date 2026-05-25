@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { GraduationCap } from "lucide-react";
 import { prisma } from "@/src/lib/prisma";
 import { requireAdmin } from "@/src/lib/auth/require-admin";
@@ -129,6 +130,7 @@ export default async function AdminStudentsPage() {
                   <th className="px-6 py-4 font-bold">Ingreso</th>
                   <th className="px-6 py-4 font-bold">Materias</th>
                   <th className="px-6 py-4 font-bold">Estado</th>
+                  <th className="px-6 py-4 text-right font-bold">Acciones</th>
                 </tr>
               </thead>
 
@@ -162,6 +164,16 @@ export default async function AdminStudentsPage() {
                       <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">
                         {student.status}
                       </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex justify-end">
+                        <Link
+                          href={`/admin/students/${student.id}`}
+                          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-bold text-[#031b46] transition hover:bg-slate-50"
+                        >
+                          Ver detalle
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 ))}

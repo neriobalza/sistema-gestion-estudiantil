@@ -39,6 +39,12 @@ export const enrollmentPeriodStatusSchema = z.enum([
   "CANCELLED",
 ]);
 export const userStatusSchema = z.enum(["ACTIVE", "INACTIVE", "SUSPENDED"]);
+export const studentStatusSchema = z.enum([
+  "ACTIVE",
+  "GRADUATED",
+  "WITHDRAWN",
+  "SUSPENDED",
+]);
 export const requirementTypeSchema = z.enum(["REQUIRED", "ELECTIVE"]);
 export const modalitySchema = z.enum(["IN_PERSON", "ONLINE", "HYBRID"]);
 export const sectionStatusSchema = z.enum([
@@ -317,6 +323,23 @@ export const studentAdmissionCreateSchema = z.object({
   curriculumId: id,
   admissionTermId: id,
 });
+
+export const studentUpdateSchema = studentAdmissionCreateSchema
+  .omit({
+    careerOptionId: true,
+    curriculumId: true,
+    admissionTermId: true,
+  })
+  .extend({
+    birthDate: z.union([dateValue, z.null()]).optional(),
+    password: z.string().min(8).optional(),
+    userStatus: userStatusSchema.optional(),
+    status: studentStatusSchema.optional(),
+  })
+  .partial()
+  .refine((data) => Object.keys(data).length > 0, {
+    message: "Debes enviar al menos un campo para actualizar",
+  });
 
 const sectionScheduleSchema = z
   .object({
