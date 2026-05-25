@@ -1,13 +1,16 @@
 "use client";
 
 import type { ComponentType, ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  AlertCircle,
   BookOpen,
   CalendarDays,
+  CheckCircle2,
   Clock,
   GraduationCap,
   Mail,
+  Trash2,
   TrendingUp,
 } from "lucide-react";
 
@@ -117,6 +120,66 @@ type ApiResponse = {
   message?: string;
 };
 
+type EnrollmentOffering = {
+  id: string;
+  sectionCode: string;
+  capacity: number;
+  enrolledCount: number;
+  availableSeats: number;
+  modality: string;
+  hasScheduleConflict: boolean;
+  professorName: string | null;
+  subject: {
+    id: string;
+    code: string;
+    name: string;
+    credits: number;
+  };
+  schedules: {
+    id: string;
+    dayOfWeek: string;
+    startMinute: number;
+    endMinute: number;
+    classroomCode: string | null;
+    classroomLocation: string;
+  }[];
+};
+
+type StudentEnrollmentData = {
+  enrollmentPeriod: {
+    id: string;
+    name: string;
+    startsAt: string;
+    endsAt: string;
+    term: {
+      id: string;
+      code: string;
+    };
+  } | null;
+  offerings: EnrollmentOffering[];
+  activeEnrollments: {
+    id: string;
+    subject: {
+      code: string;
+      name: string;
+    };
+    section: {
+      code: string;
+    };
+    schedules: {
+      id: string;
+      dayOfWeek: string;
+      startMinute: number;
+      endMinute: number;
+    }[];
+  }[];
+};
+
+type StudentEnrollmentApiResponse = {
+  data?: StudentEnrollmentData;
+  message?: string;
+};
+
 const activeEnrollmentStatuses = new Set(["PENDING", "ENROLLED"]);
 
 export function StudentDashboardClient({
@@ -128,51 +191,40 @@ export function StudentDashboardClient({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    let ignore = false;
+  const loadDashboard = useCallback(async () => {
+    try {
+      const response = await fetch("/api/student/dashboard", {
+        headers: {
+          Accept: "application/json",
+        },
+      });
+      const payload = (await response.json()) as ApiResponse;
 
-    async function loadDashboard() {
-      try {
-        const response = await fetch("/api/student/dashboard", {
-          headers: {
-            Accept: "application/json",
-          },
-        });
-        const payload = (await response.json()) as ApiResponse;
-
-        if (!response.ok) {
-          throw new Error(payload.message ?? "No se pudo cargar la información");
-        }
-
-        if (!payload.data) {
-          throw new Error("La respuesta no incluyó datos del estudiante");
-        }
-
-        if (!ignore) {
-          setData(payload.data);
-          setError(null);
-        }
-      } catch (caughtError) {
-        if (!ignore) {
-          setError(
-            caughtError instanceof Error
-              ? caughtError.message
-              : "No se pudo cargar la información",
-          );
-        }
-      } finally {
-        if (!ignore) {
-          setLoading(false);
-        }
+      if (!response.ok) {
+        throw new Error(payload.message ?? "No se pudo cargar la información");
       }
+
+      if (!payload.data) {
+        throw new Error("La respuesta no incluyó datos del estudiante");
+      }
+
+      setData(payload.data);
+      setError(null);
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "No se pudo cargar la información",
+      );
+    } finally {
+      setLoading(false);
     }
-
-    void loadDashboard();
-
-    return () => {
-      ignore = true;
-    };
   }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadDashboard();
+  }, [loadDashboard]);
 
   if (loading) {
     return (
@@ -200,7 +252,9 @@ export function StudentDashboardClient({
       {view === "dashboard" && <DashboardOverview data={data} />}
       {view === "grades" && <GradesView enrollments={data.enrollments} />}
       {view === "schedule" && <ScheduleView enrollments={data.enrollments} />}
-      {view === "enrollment" && <EnrollmentView data={data} />}
+      {view === "enrollment" && (
+        <EnrollmentView data={data} onEnrollmentChanged={loadDashboard} />
+      )}
       {view === "curriculum" && <CurriculumView data={data} />}
     </div>
   );
@@ -446,39 +500,319 @@ function ScheduleView({ enrollments }: { enrollments: Enrollment[] }) {
   );
 }
 
-function EnrollmentView({ data }: { data: StudentDashboardData }) {
+function EnrollmentView({
+  data,
+  onEnrollmentChanged,
+}: {
+  data: StudentDashboardData;
+  onEnrollmentChanged: () => Promise<void>;
+}) {
   const activeEnrollments = data.enrollments.filter((enrollment) =>
     isEnrollmentInActiveAcademicTerm(enrollment),
   );
+  const [enrollmentData, setEnrollmentData] =
+    useState<StudentEnrollmentData | null>(null);
+  const [loadingOfferings, setLoadingOfferings] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [submittingSectionId, setSubmittingSectionId] = useState<string | null>(
+    null,
+  );
+  const [cancelingEnrollmentId, setCancelingEnrollmentId] = useState<string | null>(
+    null,
+  );
+
+  const loadOfferings = useCallback(async () => {
+    try {
+      const response = await fetch("/api/student/enrollment", {
+        headers: {
+          Accept: "application/json",
+        },
+      });
+      const payload = (await response.json()) as StudentEnrollmentApiResponse;
+
+      if (!response.ok) {
+        throw new Error(payload.message ?? "No se pudo cargar la oferta");
+      }
+
+      if (!payload.data) {
+        throw new Error("La respuesta no incluyó datos de inscripción");
+      }
+
+      setEnrollmentData(payload.data);
+      setError(null);
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "No se pudo cargar la oferta",
+      );
+    } finally {
+      setLoadingOfferings(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadOfferings();
+  }, [loadOfferings]);
+
+  async function enrollSection(sectionId: string) {
+    setSubmittingSectionId(sectionId);
+    setError(null);
+    setSuccessMessage(null);
+
+    try {
+      const response = await fetch("/api/student/enrollment", {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ sectionId }),
+      });
+      const payload = (await response.json()) as StudentEnrollmentApiResponse;
+
+      if (!response.ok) {
+        throw new Error(payload.message ?? "No se pudo inscribir la materia");
+      }
+
+      setSuccessMessage(payload.message ?? "Materia inscrita correctamente");
+      await Promise.all([
+        loadOfferings(),
+        onEnrollmentChanged(),
+      ]);
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "No se pudo inscribir la materia",
+      );
+    } finally {
+      setSubmittingSectionId(null);
+    }
+  }
+
+  async function cancelEnrollment(enrollmentId: string) {
+    setCancelingEnrollmentId(enrollmentId);
+    setError(null);
+    setSuccessMessage(null);
+
+    try {
+      const response = await fetch("/api/student/enrollment", {
+        method: "DELETE",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ enrollmentId }),
+      });
+      const payload = (await response.json()) as StudentEnrollmentApiResponse;
+
+      if (!response.ok) {
+        throw new Error(payload.message ?? "No se pudo cancelar la inscripcion");
+      }
+
+      setSuccessMessage(payload.message ?? "Inscripcion cancelada correctamente");
+      await Promise.all([loadOfferings(), onEnrollmentChanged()]);
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "No se pudo cancelar la inscripcion",
+      );
+    } finally {
+      setCancelingEnrollmentId(null);
+    }
+  }
+
+  const groupedOfferings = useMemo(
+    () => groupOfferingsBySubject(enrollmentData?.offerings ?? []),
+    [enrollmentData?.offerings],
+  );
 
   return (
-    <section className="grid gap-4 lg:grid-cols-3">
-      <InfoCard
-        icon={TrendingUp}
-        label="Grupo"
-        value={
-          data.summary.enrollmentGroup
-            ? `Grupo ${data.summary.enrollmentGroup}`
-            : "Sin grupo"
-        }
-        detail={`Promedio ${formatNullableNumber(data.summary.average)}`}
+    <div className="space-y-4">
+      <section className="grid gap-4 lg:grid-cols-3">
+        <InfoCard
+          icon={TrendingUp}
+          label="Grupo"
+          value={
+            data.summary.enrollmentGroup
+              ? `Grupo ${data.summary.enrollmentGroup}`
+              : "Sin grupo"
+          }
+          detail={`Promedio ${formatNullableNumber(data.summary.average)}`}
+        />
+        <InfoCard
+          icon={CalendarDays}
+          label="Periodo de inscripción"
+          value={enrollmentData?.enrollmentPeriod?.name ?? "Sin periodo activo"}
+          detail={
+            enrollmentData?.enrollmentPeriod
+              ? `Periodo ${enrollmentData.enrollmentPeriod.term.code}`
+              : `${activeEnrollments.length} materias activas`
+          }
+        />
+        <InfoCard
+          icon={BookOpen}
+          label="Créditos aprobados"
+          value={`${data.summary.approvedCredits}/${data.summary.totalCredits}`}
+          detail="Usados para avance académico"
+        />
+      </section>
+
+      {error && (
+        <InlineNotice icon={AlertCircle} tone="error" message={error} />
+      )}
+      {successMessage && (
+        <InlineNotice
+          icon={CheckCircle2}
+          tone="success"
+          message={successMessage}
+        />
+      )}
+
+      <EnrollmentTable
+        enrollments={activeEnrollments}
+        title="Materias inscritas"
+        onCancel={cancelEnrollment}
+        cancelingEnrollmentId={cancelingEnrollmentId}
+        canCancel={Boolean(enrollmentData?.enrollmentPeriod)}
       />
-      <InfoCard
-        icon={CalendarDays}
-        label="Periodo de inscripción"
-        value={activeEnrollments[0]?.enrollmentPeriodName ?? "Sin periodo activo"}
-        detail={`${activeEnrollments.length} materias activas`}
-      />
-      <InfoCard
-        icon={BookOpen}
-        label="Créditos aprobados"
-        value={`${data.summary.approvedCredits}/${data.summary.totalCredits}`}
-        detail="Usados para avance académico"
-      />
-      <div className="lg:col-span-3">
-        <EnrollmentTable enrollments={activeEnrollments} title="Materias inscritas" />
-      </div>
-    </section>
+
+      {loadingOfferings ? (
+        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <p className="text-sm font-semibold text-slate-600">
+            Cargando oferta disponible...
+          </p>
+        </section>
+      ) : !enrollmentData?.enrollmentPeriod ? (
+        <EmptyState
+          icon={CalendarDays}
+          message="No hay un proceso de inscripción activo para tu periodo académico."
+        />
+      ) : groupedOfferings.length === 0 ? (
+        <EmptyState
+          icon={BookOpen}
+          message="No hay materias ofertadas que puedas inscribir en este momento."
+        />
+      ) : (
+        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h3 className="text-lg font-bold text-[#031b46]">
+                Oferta disponible
+              </h3>
+              <p className="mt-1 text-sm text-slate-500">
+                {enrollmentData.enrollmentPeriod.name} ·{" "}
+                {enrollmentData.enrollmentPeriod.term.code}
+              </p>
+            </div>
+            <span className="w-fit rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700">
+              {enrollmentData.offerings.length} secciones
+            </span>
+          </div>
+
+          <div className="mt-5 space-y-5">
+            {groupedOfferings.map((group) => (
+              <article
+                key={group.subject.id}
+                className="rounded-xl border border-slate-200 p-4"
+              >
+                <div className="flex flex-col gap-1 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide text-amber-700">
+                      {group.subject.code} · {group.subject.credits} UC
+                    </p>
+                    <h4 className="mt-1 text-base font-bold text-[#031b46]">
+                      {group.subject.name}
+                    </h4>
+                  </div>
+                  <span className="w-fit rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">
+                    Prelaciones aprobadas
+                  </span>
+                </div>
+
+                <div className="mt-4 grid gap-3 xl:grid-cols-2">
+                  {group.sections.map((section) => {
+                    const isFull = section.availableSeats <= 0;
+                    const disabled =
+                      isFull ||
+                      section.hasScheduleConflict ||
+                      submittingSectionId !== null;
+
+                    return (
+                      <div
+                        key={section.id}
+                        className="rounded-lg border border-slate-200 bg-slate-50 p-4"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-bold text-slate-800">
+                              Sección {section.sectionCode}
+                            </p>
+                            <p className="mt-1 text-xs text-slate-500">
+                              {section.professorName ?? "Sin profesor"} ·{" "}
+                              {formatModality(section.modality)}
+                            </p>
+                          </div>
+                          <span className="shrink-0 rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-600">
+                            {section.availableSeats}/{section.capacity} cupos
+                          </span>
+                        </div>
+
+                        <div className="mt-3 space-y-1">
+                          {section.schedules.length > 0 ? (
+                            section.schedules.map((schedule) => (
+                              <p
+                                key={schedule.id}
+                                className="text-xs font-semibold text-slate-600"
+                              >
+                                {getDayLabel(schedule.dayOfWeek)} ·{" "}
+                                {formatMinutes(schedule.startMinute)} -{" "}
+                                {formatMinutes(schedule.endMinute)} ·{" "}
+                                {schedule.classroomCode ?? "Sin aula"}
+                              </p>
+                            ))
+                          ) : (
+                            <p className="text-xs font-semibold text-slate-500">
+                              Sin horario publicado
+                            </p>
+                          )}
+                        </div>
+
+                        {section.hasScheduleConflict && (
+                          <p className="mt-3 text-xs font-bold text-red-600">
+                            Colisiona con tu horario actual
+                          </p>
+                        )}
+                        {isFull && (
+                          <p className="mt-3 text-xs font-bold text-red-600">
+                            Sin cupos disponibles
+                          </p>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => void enrollSection(section.id)}
+                          disabled={disabled}
+                          className="mt-4 inline-flex h-10 items-center justify-center rounded-lg bg-[#031b46] px-4 text-sm font-bold text-white transition hover:bg-[#05245d] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500"
+                        >
+                          {submittingSectionId === section.id
+                            ? "Inscribiendo..."
+                            : "Inscribir"}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
   );
 }
 
@@ -669,10 +1003,16 @@ function EnrollmentTable({
   enrollments,
   title = "Materias recientes",
   emptyMessage = "No hay materias para mostrar.",
+  onCancel,
+  cancelingEnrollmentId,
+  canCancel = false,
 }: {
   enrollments: Enrollment[];
   title?: string;
   emptyMessage?: string;
+  onCancel?: (enrollmentId: string) => void;
+  cancelingEnrollmentId?: string | null;
+  canCancel?: boolean;
 }) {
   if (enrollments.length === 0) {
     return <EmptyState icon={BookOpen} message={emptyMessage} />;
@@ -691,6 +1031,7 @@ function EnrollmentTable({
               <th className="px-4 py-3 font-bold">Período</th>
               <th className="px-4 py-3 font-bold">Nota</th>
               <th className="px-4 py-3 font-bold">Estado</th>
+              {onCancel && <th className="px-4 py-3 font-bold">Acción</th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -722,6 +1063,21 @@ function EnrollmentTable({
                     tone={enrollment.gradeStatus === "PASSED" ? "success" : "neutral"}
                   />
                 </td>
+                {onCancel && (
+                  <td className="px-4 py-4">
+                    <button
+                      type="button"
+                      onClick={() => onCancel(enrollment.id)}
+                      disabled={!canCancel || cancelingEnrollmentId !== null}
+                      className="inline-flex h-9 items-center gap-2 rounded-lg border border-red-100 bg-red-50 px-3 text-xs font-bold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      {cancelingEnrollmentId === enrollment.id
+                        ? "Cancelando..."
+                        : "Cancelar"}
+                    </button>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -794,6 +1150,30 @@ function EmptyState({
   );
 }
 
+function InlineNotice({
+  icon: Icon,
+  tone,
+  message,
+}: {
+  icon: ComponentType<{ className?: string }>;
+  tone: "success" | "error";
+  message: string;
+}) {
+  const className =
+    tone === "success"
+      ? "border-emerald-100 bg-emerald-50 text-emerald-700"
+      : "border-red-100 bg-red-50 text-red-700";
+
+  return (
+    <div
+      className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-sm font-semibold ${className}`}
+    >
+      <Icon className="h-5 w-5 shrink-0" />
+      <p>{message}</p>
+    </div>
+  );
+}
+
 function StatusBadge({
   label,
   tone,
@@ -823,6 +1203,46 @@ function isEnrollmentInActiveAcademicTerm(enrollment: Enrollment) {
     activeEnrollmentStatuses.has(enrollment.status) &&
     enrollment.termStatus === "ACTIVE"
   );
+}
+
+function groupOfferingsBySubject(offerings: EnrollmentOffering[]) {
+  const groups = new Map<
+    string,
+    {
+      subject: EnrollmentOffering["subject"];
+      sections: EnrollmentOffering[];
+    }
+  >();
+
+  for (const offering of offerings) {
+    const existing = groups.get(offering.subject.id);
+
+    if (existing) {
+      existing.sections.push(offering);
+    } else {
+      groups.set(offering.subject.id, {
+        subject: offering.subject,
+        sections: [offering],
+      });
+    }
+  }
+
+  return [...groups.values()];
+}
+
+function formatModality(value: string) {
+  const labels: Record<string, string> = {
+    IN_PERSON: "Presencial",
+    ONLINE: "En linea",
+    HYBRID: "Hibrida",
+  };
+
+  return labels[value] ?? value;
+}
+
+function getDayLabel(value: string) {
+  const day = allWeekDays.find((weekDay) => weekDay.value === value);
+  return day?.label ?? value;
 }
 
 const graphNodeWidth = 220;
@@ -1021,14 +1441,17 @@ function formatMinutes(minutes: number) {
   return `${String(hours).padStart(2, "0")}:${String(remainingMinutes).padStart(2, "0")}`;
 }
 
-const weekDays = [
+const allWeekDays = [
   { value: "MONDAY", label: "Lunes" },
   { value: "TUESDAY", label: "Martes" },
   { value: "WEDNESDAY", label: "Miércoles" },
   { value: "THURSDAY", label: "Jueves" },
   { value: "FRIDAY", label: "Viernes" },
+  { value: "SATURDAY", label: "Sábado" },
+  { value: "SUNDAY", label: "Domingo" },
 ];
 
+const weekDays = allWeekDays.slice(0, 5);
 const weekdayValues = new Set(weekDays.map((day) => day.value));
 
 function dayColumnIndex(day: string) {
