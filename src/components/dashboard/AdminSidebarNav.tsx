@@ -5,14 +5,23 @@ import {
   Building2,
   CalendarDays,
   ClipboardList,
+  Clock,
   FileText,
+  GraduationCap,
   LayoutDashboard,
+  NotebookPen,
   Settings,
   Users,
 } from "lucide-react";
 import { usePathname } from "next/navigation";
 
-const sidebarItems = [
+type SidebarItem = {
+  label: string;
+  href: string;
+  icon: typeof LayoutDashboard;
+};
+
+const adminSidebarItems: SidebarItem[] = [
   {
     label: "Dashboard",
     href: "/admin",
@@ -60,12 +69,40 @@ const sidebarItems = [
   },
 ];
 
-export function SidebarNav() {
+const studentSidebarItems: SidebarItem[] = [
+  {
+    label: "Dashboard",
+    href: "/student",
+    icon: LayoutDashboard,
+  },
+  {
+    label: "Notas",
+    href: "/student/notas",
+    icon: NotebookPen,
+  },
+  {
+    label: "Horario",
+    href: "/student/horario",
+    icon: Clock,
+  },
+  {
+    label: "Inscripción",
+    href: "/student/inscripcion",
+    icon: CalendarDays,
+  },
+  {
+    label: "Plan de estudio",
+    href: "/student/plan-de-estudio",
+    icon: GraduationCap,
+  },
+];
+
+function DashboardSidebarNav({ items }: { items: SidebarItem[] }) {
   const path = usePathname();
 
   return (
     <nav className="flex-1 space-y-2 px-4 py-6">
-      {sidebarItems.map((item) => {
+      {items.map((item) => {
         const Icon = item.icon;
 
         return (
@@ -74,7 +111,7 @@ export function SidebarNav() {
             href={item.href}
             className={[
               "group flex items-center gap-4 rounded-xl px-4 py-3 text-sm font-semibold transition",
-              path == item.href
+              path === item.href
                 ? "bg-white/10 text-amber-400 shadow-sm ring-1 ring-white/5"
                 : "text-slate-200 hover:bg-white/10 hover:text-white",
             ].join(" ")}
@@ -82,7 +119,7 @@ export function SidebarNav() {
             <Icon
               className={[
                 "h-5 w-5",
-                path == item.href
+                path === item.href
                   ? "text-amber-400"
                   : "text-slate-300 group-hover:text-white",
               ].join(" ")}
@@ -93,4 +130,12 @@ export function SidebarNav() {
       })}
     </nav>
   );
+}
+
+export function SidebarNav() {
+  return <DashboardSidebarNav items={adminSidebarItems} />;
+}
+
+export function StudentSidebarNav() {
+  return <DashboardSidebarNav items={studentSidebarItems} />;
 }
