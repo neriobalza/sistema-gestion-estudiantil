@@ -321,14 +321,16 @@ function ScheduleView({ enrollments }: { enrollments: Enrollment[] }) {
       enrollments
         .filter((enrollment) => activeEnrollmentStatuses.has(enrollment.status))
         .flatMap((enrollment) =>
-          enrollment.schedules.map((schedule) => ({
-            ...schedule,
-            enrollmentId: enrollment.id,
-            subjectCode: enrollment.subject.code,
-            subjectName: enrollment.subject.name,
-            sectionCode: enrollment.section.code,
-            professorName: enrollment.section.professorName ?? "Sin profesor",
-          })),
+          enrollment.schedules
+            .filter((schedule) => weekdayValues.has(schedule.dayOfWeek))
+            .map((schedule) => ({
+              ...schedule,
+              enrollmentId: enrollment.id,
+              subjectCode: enrollment.subject.code,
+              subjectName: enrollment.subject.name,
+              sectionCode: enrollment.section.code,
+              professorName: enrollment.section.professorName ?? "Sin profesor",
+            })),
         )
         .sort(
           (left, right) =>
@@ -342,28 +344,89 @@ function ScheduleView({ enrollments }: { enrollments: Enrollment[] }) {
     return <EmptyState icon={Clock} message="No hay horario activo para mostrar." />;
   }
 
+  const scheduleBounds = getScheduleGridBounds(blocks);
+  const timeSlots = buildTimeSlots(
+    scheduleBounds.startMinute,
+    scheduleBounds.endMinute,
+  );
+
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <h3 className="text-lg font-bold text-[#031b46]">Horario activo</h3>
-      <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {blocks.map((block) => (
-          <article
-            key={`${block.enrollmentId}-${block.id}`}
-            className="rounded-xl border border-slate-200 bg-slate-50 p-4"
-          >
-            <p className="text-xs font-bold uppercase tracking-wide text-amber-700">
-              {getDayLabel(block.dayOfWeek)} · {formatMinutes(block.startMinute)} -{" "}
-              {formatMinutes(block.endMinute)}
-            </p>
-            <p className="mt-2 font-bold text-[#031b46]">
-              {block.subjectCode} · {block.subjectName}
-            </p>
-            <p className="mt-1 text-sm text-slate-600">
-              Sec. {block.sectionCode} · {block.classroomCode ?? "Sin aula"}
-            </p>
-            <p className="mt-1 text-sm text-slate-500">{block.professorName}</p>
-          </article>
-        ))}
+      <div className="mt-5 overflow-x-auto">
+        <div
+          className="grid min-w-260 rounded-xl border border-slate-200 bg-white"
+          style={{
+            gridTemplateColumns: "5rem repeat(5, minmax(10rem, 1fr))",
+            gridTemplateRows: `3rem repeat(${timeSlots.length}, 2.75rem)`,
+          }}
+        >
+          <div className="sticky left-0 z-20 border-b border-r border-slate-200 bg-slate-50" />
+          {weekDays.map((day) => (
+            <div
+              key={day.value}
+              className="border-b border-r border-slate-200 bg-slate-50 px-3 py-3 text-center text-xs font-bold uppercase tracking-wide text-slate-500 last:border-r-0"
+            >
+              {day.label}
+            </div>
+          ))}
+
+          {timeSlots.map((slot, index) => (
+            <div
+              key={slot}
+              className="sticky left-0 z-10 border-r border-slate-200 bg-slate-50 px-2 py-2 text-xs font-bold text-slate-500"
+              style={{ gridColumn: 1, gridRow: index + 2 }}
+            >
+              {formatMinutes(slot)}
+            </div>
+          ))}
+
+          {timeSlots.map((slot, slotIndex) =>
+            weekDays.map((day, dayIndex) => (
+              <div
+                key={`${day.value}-${slot}`}
+                className="border-b border-r border-slate-100 last:border-r-0"
+                style={{
+                  gridColumn: dayIndex + 2,
+                  gridRow: slotIndex + 2,
+                }}
+              />
+            )),
+          )}
+
+          {blocks.map((block) => {
+            const rowStart =
+              Math.floor((block.startMinute - scheduleBounds.startMinute) / 30) + 2;
+            const rowSpan = Math.max(
+              1,
+              Math.ceil((block.endMinute - block.startMinute) / 30),
+            );
+
+            return (
+              <article
+                key={`${block.enrollmentId}-${block.id}`}
+                className="z-10 m-1 overflow-hidden rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 shadow-sm"
+                style={{
+                  gridColumn: dayColumnIndex(block.dayOfWeek) + 2,
+                  gridRow: `${rowStart} / span ${rowSpan}`,
+                }}
+              >
+                <p className="truncate text-xs font-bold text-[#031b46]">
+                  {block.subjectCode} · {block.subjectName}
+                </p>
+                <p className="mt-1 text-xs font-semibold text-amber-700">
+                  {formatMinutes(block.startMinute)} - {formatMinutes(block.endMinute)}
+                </p>
+                <p className="mt-1 truncate text-xs text-slate-600">
+                  Sec. {block.sectionCode} · {block.classroomCode ?? "Sin aula"}
+                </p>
+                <p className="mt-1 truncate text-xs text-slate-500">
+                  {block.professorName}
+                </p>
+              </article>
+            );
+          })}
+        </div>
       </div>
     </section>
   );
@@ -645,15 +708,34 @@ const weekDays = [
   { value: "WEDNESDAY", label: "Miércoles" },
   { value: "THURSDAY", label: "Jueves" },
   { value: "FRIDAY", label: "Viernes" },
-  { value: "SATURDAY", label: "Sábado" },
-  { value: "SUNDAY", label: "Domingo" },
 ];
+
+const weekdayValues = new Set(weekDays.map((day) => day.value));
 
 function dayColumnIndex(day: string) {
   const index = weekDays.findIndex((weekDay) => weekDay.value === day);
   return index >= 0 ? index : 0;
 }
 
-function getDayLabel(day: string) {
-  return weekDays.find((weekDay) => weekDay.value === day)?.label ?? day;
+function getScheduleGridBounds(
+  scheduleBlocks: { startMinute: number; endMinute: number }[],
+) {
+  const startMinute = Math.floor(
+    Math.min(...scheduleBlocks.map((block) => block.startMinute)) / 60,
+  ) * 60;
+  const endMinute = Math.ceil(
+    Math.max(...scheduleBlocks.map((block) => block.endMinute)) / 60,
+  ) * 60;
+
+  return { startMinute, endMinute };
+}
+
+function buildTimeSlots(startMinute: number, endMinute: number) {
+  const slots = [];
+
+  for (let minute = startMinute; minute < endMinute; minute += 30) {
+    slots.push(minute);
+  }
+
+  return slots;
 }
