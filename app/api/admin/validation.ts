@@ -304,6 +304,20 @@ export const professorUpdateSchema = professorCreateSchema
     message: "Debes enviar al menos un campo para actualizar",
   });
 
+export const studentAdmissionCreateSchema = z.object({
+  name,
+  email: z.string().trim().email().transform((value) => value.toLowerCase()),
+  institutionalId: id,
+  studentCode: id,
+  nationalId: optionalId,
+  birthDate: dateValue.optional(),
+  phone: optionalText,
+  address: optionalText,
+  careerOptionId: id,
+  curriculumId: id,
+  admissionTermId: id,
+});
+
 const sectionScheduleSchema = z
   .object({
     classroomId: optionalId,

@@ -1,24 +1,91 @@
 import { GraduationCap } from "lucide-react";
 import { prisma } from "@/src/lib/prisma";
 import { requireAdmin } from "@/src/lib/auth/require-admin";
+import { CreateStudentAdmissionForm } from "./CreateStudentAdmissionForm";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminStudentsPage() {
   await requireAdmin();
 
-  const students = await prisma.studentProfile.findMany({
-    orderBy: { studentCode: "asc" },
-    include: {
-      user: true,
-      currentCareerOption: {
-        include: {
-          career: true,
+  const now = new Date();
+  const [students, plannedTerms, careerOptions] = await Promise.all([
+    prisma.studentProfile.findMany({
+      orderBy: { studentCode: "asc" },
+      include: {
+        user: true,
+        admissionTerm: true,
+        currentCareerOption: {
+          include: {
+            career: true,
+          },
+        },
+        curriculum: true,
+        _count: {
+          select: {
+            enrollments: true,
+          },
         },
       },
-      curriculum: true,
-    },
-  });
+    }),
+    prisma.academicTerm.findMany({
+      where: {
+        status: "PLANNED",
+        startsAt: {
+          gt: now,
+        },
+      },
+      orderBy: { startsAt: "asc" },
+      select: {
+        id: true,
+        code: true,
+        startsAt: true,
+      },
+    }),
+    prisma.careerOption.findMany({
+      where: {
+        curricula: {
+          some: {
+            status: "ACTIVE",
+            subjects: {
+              some: {
+                semesterNumber: 1,
+                requirementType: "REQUIRED",
+              },
+            },
+          },
+        },
+      },
+      orderBy: [{ career: { name: "asc" } }, { name: "asc" }],
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        career: {
+          select: {
+            name: true,
+            school: {
+              select: {
+                name: true,
+              },
+            },
+          },
+        },
+        curricula: {
+          where: {
+            status: "ACTIVE",
+          },
+          orderBy: { version: "desc" },
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            version: true,
+          },
+        },
+      },
+    }),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -30,6 +97,14 @@ export default async function AdminStudentsPage() {
           Administra los estudiantes admitidos de la universidad.
         </p>
       </section>
+
+      <CreateStudentAdmissionForm
+        terms={plannedTerms.map((term) => ({
+          ...term,
+          startsAt: term.startsAt.toISOString(),
+        }))}
+        careerOptions={careerOptions}
+      />
 
       <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
         {students.length === 0 ? (
@@ -51,6 +126,8 @@ export default async function AdminStudentsPage() {
                   <th className="px-6 py-4 font-bold">Codigo</th>
                   <th className="px-6 py-4 font-bold">Carrera</th>
                   <th className="px-6 py-4 font-bold">Pensum</th>
+                  <th className="px-6 py-4 font-bold">Ingreso</th>
+                  <th className="px-6 py-4 font-bold">Materias</th>
                   <th className="px-6 py-4 font-bold">Estado</th>
                 </tr>
               </thead>
@@ -74,6 +151,12 @@ export default async function AdminStudentsPage() {
                     </td>
                     <td className="px-6 py-4 text-sm text-slate-600">
                       {student.curriculum.name}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-slate-600">
+                      {student.admissionTerm?.code ?? "Sin periodo"}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-slate-600">
+                      {student._count.enrollments}
                     </td>
                     <td className="px-6 py-4">
                       <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">
