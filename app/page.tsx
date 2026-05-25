@@ -5,8 +5,17 @@ import { StatsSection } from "@/src/components/landing/StatsSection";
 import { StepsSection } from "@/src/components/landing/StepsSection";
 import { TestimonialSection } from "@/src/components/landing/TestimonialSection";
 import Header from "@/src/components/layout/Header";
+import { auth } from "@/auth";
+import { redirect } from "next/navigation";
+import { getDashboardRoute } from "@/src/lib/auth/dashboard-route";
 
-export default function HomePage() {
+export default async function HomePage() {
+  const session = await auth();
+
+  if (session?.user) {
+    redirect(getDashboardRoute(session.user.role));
+  }
+
   return (
     <>
       <Header />
