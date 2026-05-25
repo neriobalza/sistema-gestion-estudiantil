@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/src/lib/prisma";
-import { TermStatus } from "@/src/generated/prisma/enums";
+import {
+  EnrollmentStatus,
+  GradeStatus,
+  TermStatus,
+} from "@/src/generated/prisma/enums";
 import {
   handleApiError,
   jsonError,
@@ -89,19 +93,55 @@ export async function PATCH(request: Request, { params }: RouteParams) {
               data,
             });
 
-            await tx.sectionEnrollment.updateMany({
+            const enrolledInTerm = {
               where: {
-                finalGrade: null,
-                status: {
-                  not: "DROPPED",
-                },
+                status: EnrollmentStatus.ENROLLED,
                 section: {
                   termId: id,
                 },
               },
+            };
+
+            await tx.sectionEnrollment.updateMany({
+              ...enrolledInTerm,
+              where: {
+                ...enrolledInTerm.where,
+                finalGrade: {
+                  gte: 10,
+                },
+              },
               data: {
-                finalGrade: 0,
-                gradeStatus: "FAILED",
+                status: EnrollmentStatus.COMPLETED,
+                gradeStatus: GradeStatus.PASSED,
+                approvedAt: new Date(),
+              },
+            });
+
+            await tx.sectionEnrollment.updateMany({
+              ...enrolledInTerm,
+              where: {
+                ...enrolledInTerm.where,
+                finalGrade: {
+                  lt: 10,
+                },
+              },
+              data: {
+                status: EnrollmentStatus.FAILED,
+                gradeStatus: GradeStatus.FAILED,
+                approvedAt: null,
+              },
+            });
+
+            await tx.sectionEnrollment.updateMany({
+              ...enrolledInTerm,
+              where: {
+                ...enrolledInTerm.where,
+                finalGrade: null,
+              },
+              data: {
+                status: EnrollmentStatus.DROPPED,
+                gradeStatus: GradeStatus.WITHDRAWN,
+                droppedAt: new Date(),
                 approvedAt: null,
               },
             });

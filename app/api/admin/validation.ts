@@ -25,7 +25,14 @@ const nullablePositiveInt = z
   .union([z.coerce.number().int().positive(), z.null()])
   .optional();
 
-const dateValue = z.coerce.date();
+const dateValue = z.coerce
+  .date()
+  .min(new Date("1900-01-01T00:00:00.000Z"), {
+    message: "La fecha debe ser posterior o igual a 1900",
+  })
+  .max(new Date("2200-12-31T23:59:59.999Z"), {
+    message: "La fecha debe ser anterior o igual a 2200",
+  });
 
 const booleanValue = z.coerce.boolean();
 
