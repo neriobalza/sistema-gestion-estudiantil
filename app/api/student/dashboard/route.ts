@@ -40,7 +40,11 @@ export async function GET() {
             subjects: {
               orderBy: [{ semesterNumber: "asc" }, { subject: { code: "asc" } }],
               include: {
-                subject: true,
+                subject: {
+                  include: {
+                    prerequisites: true,
+                  },
+                },
               },
             },
           },
@@ -231,9 +235,13 @@ export async function GET() {
             credits: curriculumSubject.credits,
             minPassingGrade: Number(curriculumSubject.minPassingGrade),
             subject: {
+              id: curriculumSubject.subject.id,
               code: curriculumSubject.subject.code,
               name: curriculumSubject.subject.name,
             },
+            prerequisiteSubjectIds: curriculumSubject.subject.prerequisites.map(
+              (prerequisite) => prerequisite.prerequisiteId,
+            ),
             approved: approvedSubjectIds.has(curriculumSubject.subjectId),
           }),
         ),

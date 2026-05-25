@@ -63,12 +63,16 @@ type StudentDashboardData = {
     credits: number;
     minPassingGrade: number;
     approved: boolean;
+    prerequisiteSubjectIds: string[];
     subject: {
+      id: string;
       code: string;
       name: string;
     };
   }[];
 };
+
+type CurriculumSubject = StudentDashboardData["curriculumSubjects"][number];
 
 type Enrollment = {
   id: string;
@@ -469,6 +473,9 @@ function EnrollmentView({ data }: { data: StudentDashboardData }) {
 }
 
 function CurriculumView({ data }: { data: StudentDashboardData }) {
+  const graph = buildCurriculumGraph(data.curriculumSubjects);
+  const [hoveredSubjectId, setHoveredSubjectId] = useState<string | null>(null);
+
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
@@ -484,46 +491,165 @@ function CurriculumView({ data }: { data: StudentDashboardData }) {
       </div>
 
       <div className="mt-5 overflow-x-auto">
-        <table className="w-full min-w-220 text-left">
-          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-            <tr>
-              <th className="px-4 py-3 font-bold">Semestre</th>
-              <th className="px-4 py-3 font-bold">Materia</th>
-              <th className="px-4 py-3 font-bold">Tipo</th>
-              <th className="px-4 py-3 font-bold">Créditos</th>
-              <th className="px-4 py-3 font-bold">Estado</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {data.curriculumSubjects.map((curriculumSubject) => (
-              <tr key={curriculumSubject.id} className="hover:bg-slate-50/70">
-                <td className="px-4 py-4 text-sm font-semibold text-slate-700">
-                  {curriculumSubject.semesterNumber}
-                </td>
-                <td className="px-4 py-4">
-                  <p className="font-bold text-slate-800">
-                    {curriculumSubject.subject.name}
+        <div
+          className="relative rounded-xl border border-slate-200 bg-slate-50"
+          style={{
+            width: graph.width,
+            height: graph.height,
+          }}
+        >
+          <svg
+            className="pointer-events-none absolute inset-0"
+            width={graph.width}
+            height={graph.height}
+            viewBox={`0 0 ${graph.width} ${graph.height}`}
+            aria-hidden="true"
+          >
+            <defs>
+              <marker
+                id="curriculum-arrow"
+                markerHeight="8"
+                markerWidth="8"
+                orient="auto"
+                refX="7"
+                refY="4"
+              >
+                <path d="M0,0 L8,4 L0,8 Z" fill="#94a3b8" />
+              </marker>
+              <marker
+                id="curriculum-arrow-prerequisite"
+                markerHeight="8"
+                markerWidth="8"
+                orient="auto"
+                refX="7"
+                refY="4"
+              >
+                <path d="M0,0 L8,4 L0,8 Z" fill="#2563eb" />
+              </marker>
+              <marker
+                id="curriculum-arrow-dependent"
+                markerHeight="8"
+                markerWidth="8"
+                orient="auto"
+                refX="7"
+                refY="4"
+              >
+                <path d="M0,0 L8,4 L0,8 Z" fill="#d97706" />
+              </marker>
+            </defs>
+            {graph.edges.map((edge) => {
+              const relation = getEdgeRelation(edge, hoveredSubjectId);
+
+              return (
+                <path
+                  key={`${edge.from.id}-${edge.to.id}`}
+                  d={buildEdgePath(edge.from, edge.to)}
+                  fill="none"
+                  stroke={getEdgeStroke(relation)}
+                  strokeOpacity={getEdgeOpacity(relation, hoveredSubjectId)}
+                  strokeWidth={relation === "none" ? 2 : 3}
+                  markerEnd={getEdgeMarker(relation, hoveredSubjectId)}
+                />
+              );
+            })}
+          </svg>
+
+          {graph.semesters.map((semester) => (
+            <div
+              key={semester.number}
+              className="absolute top-4 text-center text-xs font-bold uppercase tracking-wide text-slate-500"
+              style={{
+                left: semester.x,
+                width: graphNodeWidth,
+              }}
+            >
+              Semestre {semester.number}
+            </div>
+          ))}
+
+          {graph.nodes.map((node) => {
+            const relation = getNodeRelation(node, graph.edges, hoveredSubjectId);
+
+            return (
+              <article
+                key={node.subject.subject.id}
+                tabIndex={0}
+                onMouseEnter={() => setHoveredSubjectId(node.id)}
+                onMouseLeave={() => setHoveredSubjectId(null)}
+                onFocus={() => setHoveredSubjectId(node.id)}
+                onBlur={() => setHoveredSubjectId(null)}
+                className={[
+                  "absolute rounded-xl border p-3 shadow-sm outline-none transition",
+                  node.subject.approved
+                    ? "border-emerald-200 bg-emerald-50"
+                    : "border-slate-200 bg-white",
+                  getNodeHighlightClass(relation, hoveredSubjectId),
+                ].join(" ")}
+                style={{
+                  left: node.x,
+                  top: node.y,
+                  width: graphNodeWidth,
+                  minHeight: graphNodeHeight,
+                }}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <p
+                    className={[
+                      "text-xs font-bold",
+                      node.subject.approved
+                        ? "text-emerald-700"
+                        : "text-slate-500",
+                    ].join(" ")}
+                  >
+                    {node.subject.subject.code}
                   </p>
-                  <p className="mt-1 text-xs font-semibold text-amber-700">
-                    {curriculumSubject.subject.code}
+                  <span
+                    className={[
+                      "shrink-0 rounded-full px-2 py-0.5 text-[0.65rem] font-bold",
+                      node.subject.approved
+                        ? "bg-emerald-100 text-emerald-700"
+                        : "bg-slate-100 text-slate-500",
+                    ].join(" ")}
+                  >
+                    {node.subject.approved ? "Aprobada" : "No cursada"}
+                  </span>
+                </div>
+                <h4 className="mt-2 text-sm font-bold leading-5 text-[#031b46]">
+                  {node.subject.subject.name}
+                </h4>
+                <p className="mt-2 text-xs font-semibold text-slate-500">
+                  {node.subject.credits} UC · Nota mínima{" "}
+                  {node.subject.minPassingGrade}
+                </p>
+                {relation !== "none" && (
+                  <p
+                    className={[
+                      "mt-2 text-xs font-bold",
+                      relation === "selected"
+                        ? "text-[#031b46]"
+                        : relation === "prerequisite"
+                          ? "text-blue-700"
+                          : "text-amber-700",
+                    ].join(" ")}
+                  >
+                    {getRelationLabel(relation)}
                   </p>
-                </td>
-                <td className="px-4 py-4 text-sm text-slate-600">
-                  {curriculumSubject.requirementType}
-                </td>
-                <td className="px-4 py-4 text-sm text-slate-600">
-                  {curriculumSubject.credits}
-                </td>
-                <td className="px-4 py-4">
-                  <StatusBadge
-                    label={curriculumSubject.approved ? "Aprobada" : "Pendiente"}
-                    tone={curriculumSubject.approved ? "success" : "neutral"}
-                  />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                )}
+              </article>
+            );
+          })}
+
+          <div className="absolute bottom-4 left-6 flex flex-wrap gap-3 text-xs font-semibold text-slate-600">
+            <span className="inline-flex items-center gap-2">
+              <span className="h-2 w-6 rounded-full bg-blue-600" />
+              Prelación requerida
+            </span>
+            <span className="inline-flex items-center gap-2">
+              <span className="h-2 w-6 rounded-full bg-amber-600" />
+              Materia prelable
+            </span>
+          </div>
+        </div>
       </div>
     </section>
   );
@@ -678,6 +804,180 @@ function StatusBadge({
 function getProgress(approvedCredits: number, totalCredits: number) {
   if (totalCredits <= 0) return 0;
   return Math.round((approvedCredits / totalCredits) * 100);
+}
+
+const graphNodeWidth = 220;
+const graphNodeHeight = 132;
+const graphColumnGap = 72;
+const graphRowGap = 28;
+const graphPaddingX = 24;
+const graphHeaderHeight = 56;
+const graphPaddingBottom = 72;
+
+type GraphRelation = "selected" | "prerequisite" | "dependent" | "none";
+
+type CurriculumGraphNode = {
+  id: string;
+  subject: CurriculumSubject;
+  x: number;
+  y: number;
+};
+
+type CurriculumGraphEdge = {
+  from: CurriculumGraphNode;
+  to: CurriculumGraphNode;
+};
+
+function buildCurriculumGraph(subjects: CurriculumSubject[]) {
+  const semesters = [...new Set(subjects.map((subject) => subject.semesterNumber))]
+    .sort((left, right) => left - right)
+    .map((semesterNumber, index) => ({
+      number: semesterNumber,
+      x: graphPaddingX + index * (graphNodeWidth + graphColumnGap),
+    }));
+  const semesterXByNumber = new Map(
+    semesters.map((semester) => [semester.number, semester.x]),
+  );
+  const nodes = subjects
+    .map((subject) => {
+      const subjectsInSemester = subjects
+        .filter((candidate) => candidate.semesterNumber === subject.semesterNumber)
+        .sort((left, right) =>
+          left.subject.code.localeCompare(right.subject.code, "es-VE"),
+        );
+      const rowIndex = subjectsInSemester.findIndex(
+        (candidate) => candidate.subject.id === subject.subject.id,
+      );
+
+      return {
+        id: subject.subject.id,
+        subject,
+        x: semesterXByNumber.get(subject.semesterNumber) ?? graphPaddingX,
+        y: graphHeaderHeight + rowIndex * (graphNodeHeight + graphRowGap),
+      };
+    })
+    .sort((left, right) => left.x - right.x || left.y - right.y);
+  const nodeBySubjectId = new Map(nodes.map((node) => [node.id, node]));
+  const edges = nodes.flatMap((node) =>
+    node.subject.prerequisiteSubjectIds.flatMap((prerequisiteSubjectId) => {
+      const prerequisiteNode = nodeBySubjectId.get(prerequisiteSubjectId);
+
+      return prerequisiteNode ? [{ from: prerequisiteNode, to: node }] : [];
+    }),
+  );
+  const maxRows = Math.max(
+    1,
+    ...semesters.map(
+      (semester) =>
+        subjects.filter((subject) => subject.semesterNumber === semester.number)
+          .length,
+    ),
+  );
+  const width =
+    graphPaddingX * 2 +
+    semesters.length * graphNodeWidth +
+    Math.max(0, semesters.length - 1) * graphColumnGap;
+  const height =
+    graphHeaderHeight +
+    maxRows * graphNodeHeight +
+    Math.max(0, maxRows - 1) * graphRowGap +
+    graphPaddingBottom;
+
+  return { edges, height, nodes, semesters, width };
+}
+
+function buildEdgePath(from: CurriculumGraphNode, to: CurriculumGraphNode) {
+  const startX = from.x + graphNodeWidth;
+  const startY = from.y + graphNodeHeight / 2;
+  const endX = to.x;
+  const endY = to.y + graphNodeHeight / 2;
+  const midX = startX + Math.max(24, (endX - startX) / 2);
+
+  return `M ${startX} ${startY} C ${midX} ${startY}, ${midX} ${endY}, ${endX - 8} ${endY}`;
+}
+
+function getNodeRelation(
+  node: CurriculumGraphNode,
+  edges: CurriculumGraphEdge[],
+  hoveredSubjectId: string | null,
+): GraphRelation {
+  if (!hoveredSubjectId) return "none";
+  if (node.id === hoveredSubjectId) return "selected";
+
+  const isPrerequisite = edges.some(
+    (edge) => edge.from.id === node.id && edge.to.id === hoveredSubjectId,
+  );
+  if (isPrerequisite) return "prerequisite";
+
+  const isDependent = edges.some(
+    (edge) => edge.from.id === hoveredSubjectId && edge.to.id === node.id,
+  );
+  if (isDependent) return "dependent";
+
+  return "none";
+}
+
+function getEdgeRelation(
+  edge: CurriculumGraphEdge,
+  hoveredSubjectId: string | null,
+): GraphRelation {
+  if (!hoveredSubjectId) return "none";
+  if (edge.to.id === hoveredSubjectId) return "prerequisite";
+  if (edge.from.id === hoveredSubjectId) return "dependent";
+  return "none";
+}
+
+function getNodeHighlightClass(
+  relation: GraphRelation,
+  hoveredSubjectId: string | null,
+) {
+  if (!hoveredSubjectId) return "hover:-translate-y-0.5 hover:shadow-md";
+
+  if (relation === "selected") {
+    return "z-30 -translate-y-1 ring-3 ring-[#031b46]/25 shadow-lg";
+  }
+
+  if (relation === "prerequisite") {
+    return "z-20 -translate-y-0.5 border-blue-300 ring-3 ring-blue-100 shadow-md";
+  }
+
+  if (relation === "dependent") {
+    return "z-20 -translate-y-0.5 border-amber-300 ring-3 ring-amber-100 shadow-md";
+  }
+
+  return "opacity-35";
+}
+
+function getEdgeStroke(relation: GraphRelation) {
+  if (relation === "prerequisite") return "#2563eb";
+  if (relation === "dependent") return "#d97706";
+  return "#94a3b8";
+}
+
+function getEdgeOpacity(
+  relation: GraphRelation,
+  hoveredSubjectId: string | null,
+) {
+  if (!hoveredSubjectId) return 1;
+  return relation === "none" ? 0.12 : 1;
+}
+
+function getEdgeMarker(
+  relation: GraphRelation,
+  hoveredSubjectId: string | null,
+) {
+  if (relation === "prerequisite") return "url(#curriculum-arrow-prerequisite)";
+  if (relation === "dependent") return "url(#curriculum-arrow-dependent)";
+  if (hoveredSubjectId) return undefined;
+  if (relation === "none") return "url(#curriculum-arrow)";
+  return "url(#curriculum-arrow)";
+}
+
+function getRelationLabel(relation: GraphRelation) {
+  if (relation === "selected") return "Materia seleccionada";
+  if (relation === "prerequisite") return "Prela esta materia";
+  if (relation === "dependent") return "Depende de esta materia";
+  return "";
 }
 
 function formatNullableNumber(value: number | null) {
